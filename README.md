@@ -48,3 +48,18 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## 開発手順
+1. git clone ...
+2. npm install
+3. npm start
+
+## ブランチ運用
+- main: リリース
+- feature/xxx: 新機能
+- fix/xxx: バグ修正
+
+## コミットルール
+- feat: 新機能
+- fix: バグ修正
+- chore: 設定変更

@@ -1,6 +1,6 @@
 {
   "name": "c31_mobisupo",
-  "main": "src/screens/app.tsx",
+  "main": "index.js",
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
