@@ -5,26 +5,20 @@
     "esModuleInterop": true,
     "jsx": "react-native",
     "lib": ["DOM", "ESNext"],
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "noEmit": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "target": "ESNext",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
     "strict": true
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx",
-    "**/*.js",
-    "**/*.jsx",
-    ".eslintrc.cjs",
-    ".prettierrc.mjs",
-    "babel.config.cjs",
-    "metro.config.js"
+    "**/*.tsx"
   ],
   "exclude": ["node_modules", "jest.config.js"]
 }
