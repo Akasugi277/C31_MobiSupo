@@ -44,4 +44,4 @@ app-example
 /android
 
 # Claude Code settings
-.claude/settings.local.json
+.claude/
