@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /s /b \"C:\\KCG\\mobisapo\\C31_MobiSupo-main\\src\")",
+      "Bash(npm install:*)",
+      "Bash(npx expo install expo-auth-session expo-web-browser)",
+      "Bash(cat:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
