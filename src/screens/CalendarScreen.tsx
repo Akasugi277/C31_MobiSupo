@@ -8,7 +8,7 @@ import {
   subWeeks,
 } from "date-fns";
 import { ja } from "date-fns/locale";
-import React, { useContext, useMemo, useState } from "react";
+import React, { useContext, useMemo, useState, useEffect } from "react";
 import {
   Platform,
   ScrollView,
@@ -24,8 +24,10 @@ import {
 } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
+import EventDetailModal from "../components/EventDetailModal";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
+import * as storageService from "../services/storageService";
 
 // 祝日リストの型定義を追加
 type HolidayList = Record<string, string>;
@@ -55,7 +57,6 @@ export default function CalendarScreen() {
   const textColor = theme === "light" ? "#000" : "#fff";
 
   const [mode, setMode] = useState<ViewMode>("week");
-  const [googleLinked, setGoogleLinked] = useState(false);
 
   // 選択日を今日に（安定化）
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -66,6 +67,33 @@ export default function CalendarScreen() {
 
   // モーダルの表示状態
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
+
+  // 初回マウント時に保存された予定を読み込む
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  // 予定が変更されたら自動保存
+  useEffect(() => {
+    if (events.length > 0) {
+      storageService.saveEvents(events);
+    }
+  }, [events]);
+
+  // 予定を読み込む
+  const loadEvents = async () => {
+    try {
+      const savedEvents = await storageService.getEvents();
+      if (savedEvents.length > 0) {
+        setEvents(savedEvents);
+        console.log("予定を読み込みました:", savedEvents.length, "件");
+      }
+    } catch (error) {
+      console.error("予定読み込みエラー:", error);
+    }
+  };
 
   // 予定をカレンダー形式に変換
   const items = useMemo(() => {
@@ -75,17 +103,17 @@ export default function CalendarScreen() {
     > = {};
 
     events.forEach((event) => {
-      const dateKey = event.arrivalTime.toISOString().slice(0, 10);
+      const dateKey = event.startTime.toISOString().slice(0, 10);
       if (!itemsMap[dateKey]) {
         itemsMap[dateKey] = [];
       }
       itemsMap[dateKey].push({
         id: event.id,
-        time: event.arrivalTime.toLocaleTimeString("ja-JP", {
+        time: event.startTime.toLocaleTimeString("ja-JP", {
           hour: "2-digit",
           minute: "2-digit",
         }),
-        title: `${event.title} (${event.destination})`,
+        title: event.location ? `${event.title} (${event.location})` : event.title,
       });
     });
 
@@ -96,6 +124,20 @@ export default function CalendarScreen() {
   const handleSaveEvent = (event: EventData) => {
     setEvents((prev) => [...prev, event]);
     setShowAddModal(false);
+  };
+
+  // 予定をタップして詳細表示
+  const handleEventPress = (eventId: string) => {
+    const event = events.find((e) => e.id === eventId);
+    if (event) {
+      setSelectedEvent(event);
+      setShowDetailModal(true);
+    }
+  };
+
+  // 予定を削除
+  const handleDeleteEvent = (eventId: string) => {
+    setEvents((prev) => prev.filter((e) => e.id !== eventId));
   };
 
   // Week の日配列（選択日が属する週: 日曜始まり）
@@ -113,12 +155,6 @@ export default function CalendarScreen() {
       return `${yyyy}-${mm}-${ddn}`;
     });
   }, [selectedDate]);
-
-  // Googleカレンダー連携ダミー
-  const handleGoogleLink = async () => {
-    // 本来はOAuth認証処理
-    setGoogleLinked(true);
-  };
 
   return (
     <SafeAreaView
@@ -164,6 +200,7 @@ export default function CalendarScreen() {
             items={items}
             selectedDate={selectedDate}
             onDayPress={(d) => setSelectedDate(d.dateString)}
+            onEventPress={handleEventPress}
           />
         )}
 
@@ -175,6 +212,7 @@ export default function CalendarScreen() {
             items={items}
             selectedDate={selectedDate}
             onSelectDate={(d) => setSelectedDate(d)}
+            onEventPress={handleEventPress}
           />
         )}
 
@@ -183,24 +221,15 @@ export default function CalendarScreen() {
             textColor={textColor}
             bgColor={bgColor}
             items={items}
-            onDayPress={(d) => setSelectedDate(d.dateString)}
+            onDayPress={(d) => {
+              setSelectedDate(d.dateString);
+              // 予定がある日をタップしたら週間ビューに切り替え
+              if (items[d.dateString] && items[d.dateString].length > 0) {
+                setMode("week");
+              }
+            }}
           />
         )}
-
-        {/* Googleカレンダー連携UI */}
-        <View style={{ marginTop: 24, alignItems: "center" }}>
-          <Text style={{ color: textColor, marginBottom: 8 }}>
-            Googleカレンダー連携: {googleLinked ? "連携済み" : "未連携"}
-          </Text>
-          {!googleLinked && (
-            <TouchableOpacity
-              style={styles.googleButton}
-              onPress={handleGoogleLink}
-            >
-              <Text style={{ color: "#fff" }}>Googleカレンダーと連携する</Text>
-            </TouchableOpacity>
-          )}
-        </View>
       </ScrollView>
 
       {/* 予定作成モーダル */}
@@ -209,6 +238,14 @@ export default function CalendarScreen() {
         selectedDate={selectedDate}
         onClose={() => setShowAddModal(false)}
         onSave={handleSaveEvent}
+      />
+
+      {/* 予定詳細モーダル */}
+      <EventDetailModal
+        visible={showDetailModal}
+        event={selectedEvent}
+        onClose={() => setShowDetailModal(false)}
+        onDelete={handleDeleteEvent}
       />
     </SafeAreaView>
   );
@@ -221,12 +258,14 @@ function DayView({
   items,
   selectedDate,
   onDayPress,
+  onEventPress,
 }: {
   textColor: string;
   bgColor: string;
   items: Record<string, { id: string; time: string; title: string }[]>;
   selectedDate: string;
   onDayPress: (d: DateData) => void;
+  onEventPress: (eventId: string) => void;
 }) {
   // Agenda に渡す items に selectedDate のキーが無ければ空配列を注入して安全に動作させる
   const agendaItems = { ...items };
@@ -253,11 +292,13 @@ function DayView({
         items={agendaItems as any}
         selected={selectedDate}
         renderItem={(item: any) => (
-          <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
-            <Text style={{ color: textColor }}>
-              {item.time} {item.title}
-            </Text>
-          </ShadowView>
+          <TouchableOpacity onPress={() => onEventPress(item.id)}>
+            <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
+              <Text style={{ color: textColor }}>
+                {item.time} {item.title}
+              </Text>
+            </ShadowView>
+          </TouchableOpacity>
         )}
         renderEmptyDate={() => (
           <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
@@ -287,6 +328,7 @@ function WeekView({
   items,
   selectedDate,
   onSelectDate,
+  onEventPress,
 }: {
   textColor: string;
   bgColor: string;
@@ -294,6 +336,7 @@ function WeekView({
   items: Record<string, { id: string; time: string; title: string }[]>;
   selectedDate: string;
   onSelectDate: (d: string) => void;
+  onEventPress: (eventId: string) => void;
 }) {
   // 週の範囲文字列を生成
   const weekRangeText = useMemo(() => {
@@ -378,14 +421,15 @@ function WeekView({
           </ShadowView>
         ) : (
           (items[selectedDate] || []).map((it) => (
-            <ShadowView
-              key={it.id}
-              style={[styles.itemBox, { backgroundColor: bgColor }]}
-            >
-              <Text style={{ color: textColor }}>
-                {it.time} {it.title}
-              </Text>
-            </ShadowView>
+            <TouchableOpacity key={it.id} onPress={() => onEventPress(it.id)}>
+              <ShadowView
+                style={[styles.itemBox, { backgroundColor: bgColor }]}
+              >
+                <Text style={{ color: textColor }}>
+                  {it.time} {it.title}
+                </Text>
+              </ShadowView>
+            </TouchableOpacity>
           ))
         )}
       </View>
@@ -484,7 +528,7 @@ function MonthView({
         <Text style={styles.monthHeaderText}>{japaneseMonthTitle}</Text>
       </ShadowView>
       <RNCalendar
-        markedDates={markedDates}
+        markedDates={markedDates as any}
         onDayPress={onDayPress}
         firstDay={0}
         enableSwipeMonths={true}
@@ -497,17 +541,13 @@ function MonthView({
           dayTextColor: textColor,
           textDisabledColor: textColor + "40",
           monthTextColor: textColor,
-          textMonthFontWeight: "700", // 修正
+          textMonthFontWeight: "700" as any,
           textDayFontSize: 16,
           textMonthFontSize: 16,
           textDayHeaderFontSize: 14,
           arrowColor: textColor,
           backgroundColor: bgColor,
-          "stylesheet.calendar.header": {
-            dayTextAtIndex0: { color: "#ff4444" },
-            dayTextAtIndex6: { color: "#4444ff" },
-          },
-        }}
+        } as any}
         markingType={"custom"}
         // 月が変わった時にタイトルを更新
         onMonthChange={(dateObj) => {
@@ -530,7 +570,19 @@ function MonthView({
             if (dayNum === 6) dayColor = "#88aaff";
           }
           return (
-            <View
+            <TouchableOpacity
+              onPress={() => {
+                if (!isDisabled) {
+                  onDayPress({
+                    dateString: date.dateString,
+                    day: date.day,
+                    month: date.month,
+                    year: date.year,
+                    timestamp: date.timestamp,
+                  });
+                }
+              }}
+              disabled={isDisabled}
               style={[
                 styles.calendarDay,
                 isSelected && { backgroundColor: "#007AFF", borderRadius: 20 },
@@ -556,7 +608,7 @@ function MonthView({
               {isHoliday && (
                 <Text style={styles.holidayText}>{(marking as any).text}</Text>
               )}
-            </View>
+            </TouchableOpacity>
           );
         }}
       />
@@ -636,12 +688,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 0.5,
     borderColor: "#888",
-  },
-  googleButton: {
-    backgroundColor: "#4285F4",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
   },
   /* Week strip styles */
   weekStrip: {

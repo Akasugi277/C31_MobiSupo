@@ -1,7 +1,7 @@
 // AddEventModal.tsx
 // 新規予定作成モーダル
 
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import {
   Modal,
   View,
@@ -57,16 +57,10 @@ export default function AddEventModal({
   // フォーム入力状態
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
-  const [startTime, setStartTime] = useState(() => {
-    // 選択された日付の10:00をデフォルトに設定
-    const date = new Date(selectedDate);
-    date.setHours(10, 0, 0, 0);
-    return date;
-  });
+  const [startTime, setStartTime] = useState(new Date());
   const [endTime, setEndTime] = useState(() => {
-    // 選択された日付の11:00をデフォルトに設定
-    const date = new Date(selectedDate);
-    date.setHours(11, 0, 0, 0);
+    const date = new Date();
+    date.setHours(date.getHours() + 1);
     return date;
   });
   const [travelTime, setTravelTime] = useState("");
@@ -75,11 +69,24 @@ export default function AddEventModal({
 
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   // ルート計算の状態
   const [calculating, setCalculating] = useState(false);
   const [routeOptions, setRouteOptions] = useState<routeService.RouteInfo[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
+
+  // モーダルが開かれたときに時刻を初期化
+  useEffect(() => {
+    if (visible) {
+      const now = new Date();
+      setStartTime(now);
+      const later = new Date();
+      later.setHours(later.getHours() + 1);
+      setEndTime(later);
+    }
+  }, [visible]);
 
   // 複数のルートを計算して表示
   const calculateRoute = async () => {
@@ -266,82 +273,9 @@ export default function AddEventModal({
               onChangeText={setLocation}
             />
 
-            {/* 開始時間選択 */}
-            <Text style={[styles.label, { color: textColor }]}>開始時間 *</Text>
-            <TouchableOpacity
-              style={[styles.timeButton, { borderColor: textColor }]}
-              onPress={() => setShowStartTimePicker(true)}
-            >
-              <Text style={{ color: textColor }}>
-                {startTime.toLocaleString("ja-JP", {
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </Text>
-            </TouchableOpacity>
-
-            {showStartTimePicker && (
-              <DateTimePicker
-                value={startTime}
-                mode="time"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowStartTimePicker(Platform.OS === "ios");
-                  if (selectedDate) {
-                    setStartTime(selectedDate);
-                  }
-                }}
-              />
-            )}
-
-            {/* 終了時間選択 */}
-            <Text style={[styles.label, { color: textColor }]}>終了時間 *</Text>
-            <TouchableOpacity
-              style={[styles.timeButton, { borderColor: textColor }]}
-              onPress={() => setShowEndTimePicker(true)}
-            >
-              <Text style={{ color: textColor }}>
-                {endTime.toLocaleString("ja-JP", {
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </Text>
-            </TouchableOpacity>
-
-            {showEndTimePicker && (
-              <DateTimePicker
-                value={endTime}
-                mode="time"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowEndTimePicker(Platform.OS === "ios");
-                  if (selectedDate) {
-                    setEndTime(selectedDate);
-                  }
-                }}
-              />
-            )}
-
-            {/* 移動時間入力（任意） */}
-            <Text style={[styles.label, { color: textColor }]}>移動時間（任意）</Text>
-            <View style={styles.travelTimeContainer}>
-              <TextInput
-                style={[
-                  styles.input,
-                  styles.travelTimeInput,
-                  { color: textColor, borderColor: textColor },
-                ]}
-                placeholder="例: 30（分）"
-                placeholderTextColor={textColor + "80"}
-                value={travelTime}
-                onChangeText={setTravelTime}
-                keyboardType="numeric"
-              />
-              {location.trim() && (
+            {/* 移動時間自動計算 */}
+            {location.trim() && (
+              <View style={{ marginTop: 8, marginBottom: 12 }}>
                 <TouchableOpacity
                   style={[styles.calculateButton, calculating && styles.buttonDisabled]}
                   onPress={calculateRoute}
@@ -350,11 +284,16 @@ export default function AddEventModal({
                   {calculating ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
-                    <Text style={styles.calculateButtonText}>自動計算</Text>
+                    <Text style={styles.calculateButtonText}>📍 移動時間を自動計算</Text>
                   )}
                 </TouchableOpacity>
-              )}
-            </View>
+                {travelTime && (
+                  <Text style={[styles.travelTimeDisplay, { color: textColor }]}>
+                    移動時間: {travelTime}分
+                  </Text>
+                )}
+              </View>
+            )}
 
             {/* ルートオプション表示 */}
             {routeOptions.length > 0 && (
@@ -414,6 +353,170 @@ export default function AddEventModal({
                   </TouchableOpacity>
                 ))}
               </View>
+            )}
+
+            {/* 開始時間選択 */}
+            <Text style={[styles.label, { color: textColor }]}>開始日時 *</Text>
+            <View style={styles.dateTimeContainer}>
+              <TouchableOpacity
+                style={[styles.dateTimeButton, { borderColor: textColor }]}
+                onPress={() => setShowStartDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
+                  📅 日付
+                </Text>
+                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
+                  {startTime.toLocaleString("ja-JP", {
+                    month: "2-digit",
+                    day: "2-digit",
+                  })}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.dateTimeButton, { borderColor: textColor }]}
+                onPress={() => setShowStartTimePicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
+                  🕐 時刻
+                </Text>
+                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
+                  {startTime.toLocaleString("ja-JP", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {showStartDatePicker && (
+              <DateTimePicker
+                value={startTime}
+                mode="date"
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setShowStartDatePicker(Platform.OS === "ios");
+                  if (event.type === "dismissed") {
+                    return;
+                  }
+                  if (selectedDate) {
+                    // 既存の時刻を保持して日付のみ変更
+                    const newDate = new Date(selectedDate);
+                    newDate.setHours(startTime.getHours());
+                    newDate.setMinutes(startTime.getMinutes());
+                    newDate.setSeconds(0);
+                    newDate.setMilliseconds(0);
+                    setStartTime(newDate);
+                  }
+                }}
+              />
+            )}
+
+            {showStartTimePicker && (
+              <DateTimePicker
+                value={startTime}
+                mode="time"
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setShowStartTimePicker(Platform.OS === "ios");
+                  if (event.type === "dismissed") {
+                    return;
+                  }
+                  if (selectedDate) {
+                    // 既存の日付を保持して時刻のみ変更
+                    const newDate = new Date(startTime);
+                    newDate.setHours(selectedDate.getHours());
+                    newDate.setMinutes(selectedDate.getMinutes());
+                    newDate.setSeconds(0);
+                    newDate.setMilliseconds(0);
+                    setStartTime(newDate);
+                  }
+                }}
+              />
+            )}
+
+            {/* 終了時間選択 */}
+            <Text style={[styles.label, { color: textColor }]}>終了日時 *</Text>
+            <View style={styles.dateTimeContainer}>
+              <TouchableOpacity
+                style={[styles.dateTimeButton, { borderColor: textColor }]}
+                onPress={() => setShowEndDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
+                  📅 日付
+                </Text>
+                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
+                  {endTime.toLocaleString("ja-JP", {
+                    month: "2-digit",
+                    day: "2-digit",
+                  })}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.dateTimeButton, { borderColor: textColor }]}
+                onPress={() => setShowEndTimePicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
+                  🕐 時刻
+                </Text>
+                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
+                  {endTime.toLocaleString("ja-JP", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {showEndDatePicker && (
+              <DateTimePicker
+                value={endTime}
+                mode="date"
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setShowEndDatePicker(Platform.OS === "ios");
+                  if (event.type === "dismissed") {
+                    return;
+                  }
+                  if (selectedDate) {
+                    // 既存の時刻を保持して日付のみ変更
+                    const newDate = new Date(selectedDate);
+                    newDate.setHours(endTime.getHours());
+                    newDate.setMinutes(endTime.getMinutes());
+                    newDate.setSeconds(0);
+                    newDate.setMilliseconds(0);
+                    setEndTime(newDate);
+                  }
+                }}
+              />
+            )}
+
+            {showEndTimePicker && (
+              <DateTimePicker
+                value={endTime}
+                mode="time"
+                display="default"
+                onChange={(event, selectedDate) => {
+                  setShowEndTimePicker(Platform.OS === "ios");
+                  if (event.type === "dismissed") {
+                    return;
+                  }
+                  if (selectedDate) {
+                    // 既存の日付を保持して時刻のみ変更
+                    const newDate = new Date(endTime);
+                    newDate.setHours(selectedDate.getHours());
+                    newDate.setMinutes(selectedDate.getMinutes());
+                    newDate.setSeconds(0);
+                    newDate.setMilliseconds(0);
+                    setEndTime(newDate);
+                  }
+                }}
+              />
             )}
 
             {/* 繰り返し選択 */}
@@ -533,22 +636,35 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: "center",
   },
-  travelTimeContainer: {
+  dateTimeContainer: {
     flexDirection: "row",
-    gap: 8,
+    gap: 12,
+    marginTop: 4,
+  },
+  dateTimeButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
     alignItems: "center",
   },
-  travelTimeInput: {
-    flex: 1,
+  dateTimeLabel: {
+    fontSize: 12,
+    marginBottom: 4,
   },
   calculateButton: {
     backgroundColor: "#007AFF",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
-    minWidth: 90,
     alignItems: "center",
     justifyContent: "center",
+  },
+  travelTimeDisplay: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: "center",
+    fontWeight: "600",
   },
   calculateButtonText: {
     color: "#fff",
@@ -655,5 +771,22 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.5,
+  },
+  dateTimePicker: {
+    width: "100%",
+    marginVertical: 8,
+  },
+  pickerDoneButton: {
+    backgroundColor: "#007AFF",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  pickerDoneText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

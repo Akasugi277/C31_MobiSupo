@@ -3,13 +3,13 @@
 
 import React, { useState } from "react";
 import {
-  Alert,
-  Linking,
-  StyleSheet,
+  View,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  StyleSheet,
+  Alert,
+  Linking,
 } from "react-native";
 import * as calendarService from "../services/calendarService";
 
@@ -28,7 +28,7 @@ export default function GoogleCalendarAuth({
     const authUrl = calendarService.getAuthUrl();
     Alert.alert(
       "Google認証",
-      "ブラウザでGoogleアカウントにログインして許可してください。\n\nリダイレクトされたページに表示される認証コードをコピーして、このアプリに戻って入力してください。",
+      "ブラウザでGoogleアカウントにログインして許可してください。\n\nリダイレクトされたページのURLから、code=の後ろの部分をコピーして、このアプリに戻って入力してください。",
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -75,8 +75,13 @@ export default function GoogleCalendarAuth({
       </Text>
 
       {/* ステップ1: 認証URLを開く */}
-      <TouchableOpacity style={styles.button} onPress={handleOpenAuthUrl}>
-        <Text style={styles.buttonText}>ステップ1: Googleで認証</Text>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={handleOpenAuthUrl}
+      >
+        <Text style={styles.buttonText}>
+          ステップ1: Googleで認証
+        </Text>
       </TouchableOpacity>
 
       {/* ステップ2: 認証コードを入力 */}
