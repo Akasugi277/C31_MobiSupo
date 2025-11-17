@@ -8,7 +8,7 @@ import {
   subWeeks,
 } from "date-fns";
 import { ja } from "date-fns/locale";
-import React, { useContext, useMemo, useState, useEffect } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
   Platform,
   ScrollView,
@@ -53,8 +53,8 @@ type ViewMode = "day" | "week" | "month";
 
 export default function CalendarScreen() {
   const { theme } = useContext(ThemeContext);
+  const textColor = theme === "light" ? "rgb(33,33,33)" : "rgb(224,224,224)";
   const bgColor = theme === "light" ? "#fff" : "#333";
-  const textColor = theme === "light" ? "#000" : "#fff";
 
   const [mode, setMode] = useState<ViewMode>("week");
 

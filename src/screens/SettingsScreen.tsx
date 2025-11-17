@@ -1,31 +1,84 @@
 // src/screens/SettingsScreen.tsx
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import {
+    Alert,
     Image,
+    Modal,
     Platform,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import GoogleCalendarAuth from '../components/GoogleCalendarAuth';
 import ShadowView from '../components/ShadowView';
 import { ThemeContext } from '../components/ThemeContext';
+import {
+    clearGoogleCalendarToken,
+    isGoogleCalendarAuthenticated,
+    saveGoogleCalendarToken,
+} from '../services/storageService';
 
 export default function SettingsScreen() {
     const { theme, toggleTheme } = useContext(ThemeContext);
-    const textColor = theme === 'light' ? '#000' : '#fff';
+    const textColor = theme === 'light' ? 'rgb(33,33,33)' : 'rgb(224,224,224)';
     const bgColor = theme === 'light' ? '#fff' : '#333';
 
-    // ダミーユーザー
-    const [googleLinked, setGoogleLinked] = useState(false);
+    // ユーザー情報編集
+    const [name, setName] = useState('Kanamu Kato');
+    const [intro, setIntro] = useState('ここに自己紹介を入力');
+    const [email, setEmail] = useState('kanamu@example.com');
+    const [editMode, setEditMode] = useState(false);
+
+    // カレンダー連携状態
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [showAuthModal, setShowAuthModal] = useState(false);
     const [icloudLinked, setIcloudLinked] = useState(true);
 
-    // Googleカレンダー連携ダミー
-    const handleGoogleLink = async () => {
-        // 本来はOAuth認証処理
-        setGoogleLinked(true);
+    useEffect(() => {
+        const check = async () => {
+            const ok = await isGoogleCalendarAuthenticated();
+            setIsAuthenticated(ok);
+        };
+        void check();
+    }, []);
+
+    const handleAuthSuccess = async (accessToken: string) => {
+        await saveGoogleCalendarToken(accessToken);
+        setIsAuthenticated(true);
+        setShowAuthModal(false);
+    };
+
+    const handleDisconnectCalendar = () => {
+        Alert.alert('Google Calendar連携解除', 'Google Calendarとの連携を解除しますか？', [
+            { text: 'キャンセル', style: 'cancel' },
+            {
+                text: '解除する',
+                style: 'destructive',
+                onPress: async () => {
+                    await clearGoogleCalendarToken();
+                    setIsAuthenticated(false);
+                },
+            },
+        ]);
+    };
+
+    const handleIcloudToggle = () => setIcloudLinked(v => !v);
+
+    const handleSave = () => {
+        // 実際はAPI送信など
+        setEditMode(false);
+    };
+
+    const handleCancel = () => {
+        // 元に戻す
+        setName('Kanamu Kato');
+        setIntro('ここに自己紹介を入力');
+        setEmail('kanamu@example.com');
+        setEditMode(false);
     };
 
     return (
@@ -34,141 +87,121 @@ export default function SettingsScreen() {
                 style={[styles.screen, { backgroundColor: bgColor }]}
                 contentContainerStyle={styles.container}
             >
-                {/* プロフィール情報 */}
-                <ShadowView style={[styles.section, { backgroundColor: bgColor }]}
-                >
+                {/* ユーザー情報表示＆編集 */}
+                <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
                     <View style={styles.avatarRow}>
                         <Image
                             source={{ uri: 'https://i.pravatar.cc/150?img=3' }}
                             style={styles.avatarPlaceholder}
                         />
-                        <TouchableOpacity style={styles.avatarChange}>
-                            <Text style={{ color: textColor }}>変更</Text>
-                        </TouchableOpacity>
+                        {!editMode && (
+                            <TouchableOpacity style={styles.avatarChange} onPress={() => setEditMode(true)}>
+                                <Text style={{ color: textColor }}>編集</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
-                    <Text style={[styles.label, { color: textColor }]}>
-                        Kanamu Kato
-                    </Text>
-                    <Text style={[styles.label, { color: textColor }]}>
-                        ここに自己紹介を入力
-                    </Text>
-                    <Text style={[styles.label, { color: textColor }]}>
-                        ユーザー名：Kanamu Kato
-                    </Text>
-                    <Text style={[styles.label, { color: textColor }]}>
-                        Email：kanamu@example.com
-                    </Text>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            ▶ アカウント設定
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            ▶ Apple/Googleカレンダー連携
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            ▶ アプリの設定
-                        </Text>
-                    </TouchableOpacity>
-                </ShadowView>
 
-                {/* アカウント設定 */}
-                <Text style={[styles.sectionTitle, { color: textColor }]}>
-                    アカウント設定
-                </Text>
-                <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            ユーザー名・ニックネーム変更する
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            メールアドレスを変更する
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            パスワードを変更する
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            アバターを変更する
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            アカウントを削除する
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            ログアウトする
-                        </Text>
-                    </TouchableOpacity>
+                    {!editMode && (
+                        <>
+                            <Text style={[styles.label, { color: textColor }]}>名前：{name}</Text>
+                            <Text style={[styles.label, { color: textColor }]}>紹介：{intro}</Text>
+                            <Text style={[styles.label, { color: textColor }]}>Email：{email}</Text>
+                        </>
+                    )}
+
+                    {editMode && (
+                        <View style={{ gap: 8 }}>
+                            <TextInput
+                                value={name}
+                                onChangeText={setName}
+                                placeholder="名前"
+                                placeholderTextColor="#888"
+                                style={[styles.input, { color: textColor, borderColor: textColor }]}
+                            />
+                            <TextInput
+                                value={intro}
+                                onChangeText={setIntro}
+                                placeholder="紹介"
+                                placeholderTextColor="#888"
+                                style={[styles.input, { color: textColor, borderColor: textColor }]}
+                            />
+                            <TextInput
+                                value={email}
+                                onChangeText={setEmail}
+                                placeholder="Email"
+                                keyboardType="email-address"
+                                placeholderTextColor="#888"
+                                style={[styles.input, { color: textColor, borderColor: textColor }]}
+                            />
+                            <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+                                <TouchableOpacity onPress={handleSave}>
+                                    <Text style={{ color: '#0a84ff' }}>保存</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={handleCancel}>
+                                    <Text style={{ color: '#ff3b30' }}>キャンセル</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    )}
                 </ShadowView>
 
                 {/* カレンダー連携 */}
-                <Text style={[styles.sectionTitle, { color: textColor }]}>
-                    カレンダー連携
-                </Text>
+                <Text style={[styles.sectionTitle, { color: textColor }]}>カレンダー連携</Text>
                 <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
                     <View style={styles.linkRow}>
                         <Text style={{ color: icloudLinked ? 'green' : 'red' }}>
-                            iCloudカレンダー：{icloudLinked ? '連携済み' : '未連携'}
+                            iCloud：{icloudLinked ? '連携済み' : '未連携'}
                         </Text>
-                        <Text style={[styles.linkSub, { color: textColor }]}>
-                            kanamu@icloud.com
-                        </Text>
+                        <TouchableOpacity style={styles.linkButton} onPress={handleIcloudToggle}>
+                            <Text style={{ color: '#0a84ff' }}>
+                                {icloudLinked ? '解除する' : '連携する'}
+                            </Text>
+                        </TouchableOpacity>
                     </View>
                     <View style={styles.linkRow}>
-                        <Text style={{ color: googleLinked ? 'green' : 'red' }}>
-                            Googleカレンダー：{googleLinked ? '連携済み' : '未連携'}
+                        <Text style={{ color: isAuthenticated ? 'green' : 'red' }}>
+                            Google：{isAuthenticated ? '連携済み' : '未連携'}
                         </Text>
-                        {!googleLinked && (
-                            <TouchableOpacity style={styles.linkButton} onPress={handleGoogleLink}>
+                        {!isAuthenticated ? (
+                            <TouchableOpacity style={styles.linkButton} onPress={() => setShowAuthModal(true)}>
                                 <Text style={{ color: '#4285F4' }}>連携する</Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity style={styles.linkButton} onPress={handleDisconnectCalendar}>
+                                <Text style={{ color: '#EA4335' }}>解除する</Text>
                             </TouchableOpacity>
                         )}
                     </View>
                 </ShadowView>
 
-                {/* アプリの設定 */}
-                <Text style={[styles.sectionTitle, { color: textColor }]}>
-                    アプリの設定
-                </Text>
+                {/* テーマ変更 */}
+                <Text style={[styles.sectionTitle, { color: textColor }]}>テーマ</Text>
                 <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
                     <TouchableOpacity style={styles.buttonRow} onPress={toggleTheme}>
                         <Text style={[styles.buttonText, { color: textColor }]}>
                             {theme === 'light' ? '🌙 ダークモードに切替' : '☀️ ライトモードに切替'}
                         </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            API設定
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            通知設定
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            アクセス権限
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.buttonRow}>
-                        <Text style={[styles.buttonText, { color: textColor }]}>
-                            バージョン情報
-                        </Text>
-                    </TouchableOpacity>
                 </ShadowView>
             </ScrollView>
+
+            {/* Google Calendar認証モーダル */}
+            <Modal
+                visible={showAuthModal}
+                animationType="slide"
+                presentationStyle="pageSheet"
+                onRequestClose={() => setShowAuthModal(false)}
+            >
+                <SafeAreaView style={[styles.safe, { backgroundColor: bgColor }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 16 }}>
+                        <Text style={{ color: textColor, fontSize: 18, fontWeight: 'bold' }}>Google Calendar連携</Text>
+                        <TouchableOpacity onPress={() => setShowAuthModal(false)}>
+                            <Text style={{ color: '#007aff', fontSize: 16 }}>閉じる</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <GoogleCalendarAuth onAuthSuccess={handleAuthSuccess} />
+                </SafeAreaView>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -183,7 +216,7 @@ const styles = StyleSheet.create({
     container: {
         paddingHorizontal: 12,
         paddingTop: Platform.OS === 'ios' ? 8 : 16,
-        paddingBottom: Platform.OS === 'ios' ? 40 : 60, // iOSで縮める
+        paddingBottom: Platform.OS === 'ios' ? 40 : 60,
     },
     section: {
         borderRadius: 8,
@@ -220,11 +253,14 @@ const styles = StyleSheet.create({
     linkRow: {
         marginBottom: 12,
     },
-    linkSub: {
-        marginLeft: 16,
-        fontSize: 12,
-    },
     linkButton: {
         marginTop: 4,
+    },
+    input: {
+        borderWidth: 1,
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: Platform.OS === 'ios' ? 6 : 4,
+        fontSize: 14,
     },
 });

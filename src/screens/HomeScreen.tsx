@@ -1,40 +1,40 @@
 // src/screens/HomeScreen.tsx
 import React, { useContext, useEffect, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import GoogleCalendarAuth from "../components/GoogleCalendarAuth";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
 import {
-  CalendarEvent,
-  fetchCalendarEvents,
+    CalendarEvent,
+    fetchCalendarEvents,
 } from "../services/calendarService";
 import {
-  clearGoogleCalendarToken,
-  getGoogleCalendarToken,
-  isGoogleCalendarAuthenticated,
-  saveGoogleCalendarToken,
+    clearGoogleCalendarToken,
+    getGoogleCalendarToken,
+    isGoogleCalendarAuthenticated,
+    saveGoogleCalendarToken,
 } from "../services/storageService";
 import {
-  AddressData,
-  getCurrentAddress,
-  getCurrentWeather,
-  WeatherData,
+    AddressData,
+    getCurrentAddress,
+    getCurrentWeather,
+    WeatherData,
 } from "../services/weatherService";
 
 export default function HomeScreen() {
   const { theme } = useContext(ThemeContext);
-  const textColor = theme === "light" ? "#000" : "#fff";
+  const textColor = theme === "light" ? "rgb(33,33,33)" : "rgb(224,224,224)";
   const bgColor = theme === "light" ? "#fff" : "#333";
 
   // 天気と住所の状態管理

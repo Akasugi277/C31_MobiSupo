@@ -1,6 +1,8 @@
 import { BottomTabBar, BottomTabBarProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import React from 'react';
+import React, { useContext } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { CalendarIcon, HomeIcon, SettingsIcon } from '../components/TabIcons';
+import { ThemeContext } from '../components/ThemeContext';
 import CalendarScreen from '../screens/CalendarScreen';
 import HomeScreen from '../screens/HomeScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -18,14 +20,36 @@ function CustomTabBar(props: BottomTabBarProps) {
 }
 
 export default function TabNavigator() {
+    const { theme } = useContext(ThemeContext);
     return (
         <Tab.Navigator
             screenOptions={{ headerShown: false }}
             tabBar={props => <CustomTabBar {...props} />}
         >
-            <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'ホーム' }} />
-            <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarLabel: 'カレンダー' }} />
-            <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: '設定／プロフィール' }} />
+            <Tab.Screen
+                name="Home"
+                component={HomeScreen}
+                options={{
+                    tabBarLabel: 'ホーム',
+                    tabBarIcon: ({ focused }) => <HomeIcon active={focused} themeMode={theme} />,
+                }}
+            />
+            <Tab.Screen
+                name="Calendar"
+                component={CalendarScreen}
+                options={{
+                    tabBarLabel: 'カレンダー',
+                    tabBarIcon: ({ focused }) => <CalendarIcon active={focused} themeMode={theme} />,
+                }}
+            />
+            <Tab.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{
+                    tabBarLabel: '設定',
+                    tabBarIcon: ({ focused }) => <SettingsIcon active={focused} themeMode={theme} />,
+                }}
+            />
         </Tab.Navigator>
     );
 }
