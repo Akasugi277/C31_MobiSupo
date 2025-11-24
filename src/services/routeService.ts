@@ -9,6 +9,16 @@ import { LocationCoords } from "./weatherService";
 // 移動モードの型定義
 export type TransportMode = "walking" | "driving" | "transit";
 
+// 電車ルートの詳細情報
+export interface TransitDetails {
+  originStation?: string; // 出発駅
+  destinationStation?: string; // 到着駅
+  fare?: number; // 料金（円）
+  transferCount?: number; // 乗り換え回数
+  lines?: string[]; // 利用路線
+  steps?: string[]; // 経路の各ステップ
+}
+
 // ルート情報の型定義
 export interface RouteInfo {
   mode: TransportMode;
@@ -17,6 +27,11 @@ export interface RouteInfo {
   distance: number; // 距離（メートル）
   distanceText: string; // 距離（テキスト形式: "1.2 km"）
   departureTime?: Date; // 出発時刻（逆算用）
+  startLocation?: LocationCoords; // 出発地の座標
+  endLocation?: LocationCoords; // 目的地の座標
+  polyline?: string; // ルートのポリライン
+  coordinates?: Array<{ latitude: number; longitude: number }>; // ルートの座標配列
+  transitDetails?: TransitDetails; // 電車ルートの詳細情報
 }
 
 // ルート検索のリクエストパラメータ
@@ -216,12 +231,35 @@ async function searchEkispertRoute(
       const durationMinutes = typeof timeInfo === 'number' ? timeInfo : 30;
       const duration = durationMinutes * 60;
 
+      // 詳細情報を抽出
+      const transitDetails: TransitDetails = {
+        originStation: normalizedOrigin,
+        destinationStation: normalizedDestination,
+        fare: course.Price || undefined,
+        transferCount: course.Route?.transferCount || 0,
+        lines: [],
+        steps: [],
+      };
+
+      // 路線情報を抽出
+      if (course.Route?.Line) {
+        const lines = Array.isArray(course.Route.Line) ? course.Route.Line : [course.Route.Line];
+        transitDetails.lines = lines.map((line: any) => line.Name || "不明な路線");
+      }
+
+      // 経路のステップを構築
+      if (course.Route?.Point) {
+        const points = Array.isArray(course.Route.Point) ? course.Route.Point : [course.Route.Point];
+        transitDetails.steps = points.map((point: any) => point.Station?.Name || point.Name || "").filter(Boolean);
+      }
+
       return {
         mode: "transit",
         duration,
         durationText: `${durationMinutes}分`,
         distance: 0,
         distanceText: "-",
+        transitDetails,
       };
     }
 
@@ -230,14 +268,61 @@ async function searchEkispertRoute(
       console.warn("駅すぱあとAPI lightエンドポイントの制限: 詳細なルート情報が取得できません");
       console.warn("ResourceURI:", response.data.ResultSet.ResourceURI);
 
-      // フォールバック: 平均的な電車移動時間を推定（30分）
-      console.log("フォールバック: デフォルト所要時間（30分）を使用");
+      // フォールバック: 駅間の直線距離から所要時間を推定
+      console.log("フォールバック: 駅間の距離から所要時間を推定");
+
+      // 2点間の距離を計算（Haversine formula）
+      const calculateDistance = (
+        lat1: number,
+        lon1: number,
+        lat2: number,
+        lon2: number
+      ): number => {
+        const R = 6371; // 地球の半径（km）
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((lat1 * Math.PI) / 180) *
+            Math.cos((lat2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c; // km単位の距離
+      };
+
+      const distanceKm = calculateDistance(
+        origin.latitude,
+        origin.longitude,
+        destination.latitude,
+        destination.longitude
+      );
+
+      console.log(`駅間の直線距離: ${distanceKm.toFixed(2)}km`);
+
+      // 所要時間を推定
+      // 実際の線路距離 = 直線距離 × 1.3（曲がりを考慮）
+      // 電車の平均速度 = 40km/h（都市部）
+      // 乗り換え時間 = 5分（推定）
+      const actualDistance = distanceKm * 1.3;
+      const travelTimeHours = actualDistance / 40; // 40km/hで割る
+      const travelTimeMinutes = Math.round(travelTimeHours * 60);
+      const transferTime = 5; // 乗り換え時間（分）
+      const totalMinutes = travelTimeMinutes + transferTime;
+
+      console.log(`推定所要時間: 移動${travelTimeMinutes}分 + 乗り換え${transferTime}分 = ${totalMinutes}分`);
+
       return {
         mode: "transit",
-        duration: 30 * 60, // 30分
-        durationText: "約30分",
-        distance: 0,
-        distanceText: "-",
+        duration: totalMinutes * 60, // 秒に変換
+        durationText: `約${totalMinutes}分`,
+        distance: Math.round(actualDistance * 1000), // メートルに変換
+        distanceText: `${actualDistance.toFixed(1)} km`,
+        transitDetails: {
+          originStation: normalizedOrigin,
+          destinationStation: normalizedDestination,
+          transferCount: 1, // 推定
+        },
       };
     }
 
@@ -340,6 +425,9 @@ export async function searchMultipleRoutes(
       route.departureTime = new Date(
         arrivalTime.getTime() - route.duration * 1000
       );
+      // 座標情報を追加
+      route.startLocation = origin;
+      route.endLocation = destination;
       results.push(route);
     }
   }

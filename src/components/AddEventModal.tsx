@@ -36,12 +36,15 @@ export interface EventData {
   travelTime?: number; // 移動時間（分）任意
   repeat?: "none" | "daily" | "weekly" | "monthly"; // 繰り返し
   notification: boolean; // 通知のあり/なし
+  notificationMinutesBefore?: number; // 通知を何分前に送るか
   travelMode?: "walking" | "transit" | "driving";
   weather?: string;
   notificationIds?: {
     departure: string;
     preparation: string;
   };
+  routes?: routeService.RouteInfo[]; // 複数のルート情報
+  selectedRouteIndex?: number; // 選択されたルートのインデックス
 }
 
 export default function AddEventModal({
@@ -66,11 +69,11 @@ export default function AddEventModal({
   const [travelTime, setTravelTime] = useState("");
   const [repeat, setRepeat] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [notification, setNotification] = useState(true);
+  const [notificationMinutesBefore, setNotificationMinutesBefore] = useState(15); // デフォルト15分前
 
-  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
-  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
-  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
-  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  // ピッカー表示状態
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
 
   // ルート計算の状態
   const [calculating, setCalculating] = useState(false);
@@ -183,18 +186,33 @@ export default function AddEventModal({
     try {
       let notificationIds: any = undefined;
 
-      // 通知が有効な場合、開始時刻の通知をスケジュール
+      // 通知が有効な場合、指定された時間前に通知をスケジュール
       if (notification) {
-        const notifId = await notificationService.scheduleDepartureNotification(
-          startTime,
-          location.trim() || title,
-          "予定時刻"
-        );
+        // 通知時刻を計算（開始時刻 - 指定分数）
+        const notificationTime = new Date(startTime.getTime() - notificationMinutesBefore * 60 * 1000);
+        const now = new Date();
 
-        notificationIds = {
-          departure: notifId,
-          preparation: notifId,
-        };
+        // 通知時刻が少なくとも10秒以上未来の場合のみスケジュール
+        const secondsUntilNotification = Math.floor((notificationTime.getTime() - now.getTime()) / 1000);
+
+        if (secondsUntilNotification > 10) {
+          const notifId = await notificationService.schedulePreparationNotification(
+            notificationTime,
+            location.trim() || title,
+            notificationMinutesBefore
+          );
+
+          notificationIds = {
+            departure: notifId,
+            preparation: notifId,
+          };
+        } else {
+          // 通知時刻が過去または近すぎる場合は警告
+          Alert.alert(
+            "通知について",
+            "指定された通知時刻が過去または近すぎるため、通知はスケジュールされませんでした。"
+          );
+        }
       }
 
       // イベントデータを作成
@@ -207,7 +225,10 @@ export default function AddEventModal({
         travelTime: travelTime.trim() ? parseInt(travelTime) : undefined,
         repeat,
         notification,
+        notificationMinutesBefore: notification ? notificationMinutesBefore : undefined,
         notificationIds,
+        routes: routeOptions.length > 0 ? routeOptions : undefined,
+        selectedRouteIndex: selectedRouteIndex !== null ? selectedRouteIndex : undefined,
       };
 
       onSave(eventData);
@@ -226,6 +247,7 @@ export default function AddEventModal({
     setTravelTime("");
     setRepeat("none");
     setNotification(true);
+    setNotificationMinutesBefore(15); // デフォルトに戻す
     setRouteOptions([]);
     setSelectedRouteIndex(null);
     onClose();
@@ -357,166 +379,96 @@ export default function AddEventModal({
 
             {/* 開始時間選択 */}
             <Text style={[styles.label, { color: textColor }]}>開始日時 *</Text>
-            <View style={styles.dateTimeContainer}>
-              <TouchableOpacity
-                style={[styles.dateTimeButton, { borderColor: textColor }]}
-                onPress={() => setShowStartDatePicker(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
-                  📅 日付
-                </Text>
-                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
-                  {startTime.toLocaleString("ja-JP", {
-                    month: "2-digit",
-                    day: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dateTimeButtonFull, { borderColor: textColor }]}
+              onPress={() => {
+                setShowStartPicker(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
+                📅 日付と時刻
+              </Text>
+              <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
+                {startTime.toLocaleString("ja-JP", {
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.dateTimeButton, { borderColor: textColor }]}
-                onPress={() => setShowStartTimePicker(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
-                  🕐 時刻
-                </Text>
-                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
-                  {startTime.toLocaleString("ja-JP", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {showStartDatePicker && (
-              <DateTimePicker
-                value={startTime}
-                mode="date"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowStartDatePicker(Platform.OS === "ios");
-                  if (event.type === "dismissed") {
-                    return;
-                  }
-                  if (selectedDate) {
-                    // 既存の時刻を保持して日付のみ変更
-                    const newDate = new Date(selectedDate);
-                    newDate.setHours(startTime.getHours());
-                    newDate.setMinutes(startTime.getMinutes());
-                    newDate.setSeconds(0);
-                    newDate.setMilliseconds(0);
-                    setStartTime(newDate);
-                  }
-                }}
-              />
-            )}
-
-            {showStartTimePicker && (
-              <DateTimePicker
-                value={startTime}
-                mode="time"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowStartTimePicker(Platform.OS === "ios");
-                  if (event.type === "dismissed") {
-                    return;
-                  }
-                  if (selectedDate) {
-                    // 既存の日付を保持して時刻のみ変更
-                    const newDate = new Date(startTime);
-                    newDate.setHours(selectedDate.getHours());
-                    newDate.setMinutes(selectedDate.getMinutes());
-                    newDate.setSeconds(0);
-                    newDate.setMilliseconds(0);
-                    setStartTime(newDate);
-                  }
-                }}
-              />
+            {showStartPicker && (
+              <View style={[styles.inlinePickerContainer, { backgroundColor: theme === "light" ? "#f0f0f0" : "#2c2c2c" }]}>
+                <DateTimePicker
+                  value={startTime}
+                  mode="datetime"
+                  display="inline"
+                  locale="ja-JP"
+                  onChange={(event, selectedDate) => {
+                    if (selectedDate) {
+                      setStartTime(selectedDate);
+                    }
+                  }}
+                  themeVariant={theme}
+                />
+                <TouchableOpacity
+                  style={styles.pickerDoneButton}
+                  onPress={() => {
+                    setShowStartPicker(false);
+                  }}
+                >
+                  <Text style={styles.pickerDoneText}>完了</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             {/* 終了時間選択 */}
             <Text style={[styles.label, { color: textColor }]}>終了日時 *</Text>
-            <View style={styles.dateTimeContainer}>
-              <TouchableOpacity
-                style={[styles.dateTimeButton, { borderColor: textColor }]}
-                onPress={() => setShowEndDatePicker(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
-                  📅 日付
-                </Text>
-                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
-                  {endTime.toLocaleString("ja-JP", {
-                    month: "2-digit",
-                    day: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.dateTimeButtonFull, { borderColor: textColor }]}
+              onPress={() => {
+                setShowEndPicker(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
+                📅 日付と時刻
+              </Text>
+              <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
+                {endTime.toLocaleString("ja-JP", {
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.dateTimeButton, { borderColor: textColor }]}
-                onPress={() => setShowEndTimePicker(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.dateTimeLabel, { color: textColor + "80" }]}>
-                  🕐 時刻
-                </Text>
-                <Text style={{ color: textColor, fontSize: 16, fontWeight: "600" }}>
-                  {endTime.toLocaleString("ja-JP", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {showEndDatePicker && (
-              <DateTimePicker
-                value={endTime}
-                mode="date"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowEndDatePicker(Platform.OS === "ios");
-                  if (event.type === "dismissed") {
-                    return;
-                  }
-                  if (selectedDate) {
-                    // 既存の時刻を保持して日付のみ変更
-                    const newDate = new Date(selectedDate);
-                    newDate.setHours(endTime.getHours());
-                    newDate.setMinutes(endTime.getMinutes());
-                    newDate.setSeconds(0);
-                    newDate.setMilliseconds(0);
-                    setEndTime(newDate);
-                  }
-                }}
-              />
-            )}
-
-            {showEndTimePicker && (
-              <DateTimePicker
-                value={endTime}
-                mode="time"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowEndTimePicker(Platform.OS === "ios");
-                  if (event.type === "dismissed") {
-                    return;
-                  }
-                  if (selectedDate) {
-                    // 既存の日付を保持して時刻のみ変更
-                    const newDate = new Date(endTime);
-                    newDate.setHours(selectedDate.getHours());
-                    newDate.setMinutes(selectedDate.getMinutes());
-                    newDate.setSeconds(0);
-                    newDate.setMilliseconds(0);
-                    setEndTime(newDate);
-                  }
-                }}
-              />
+            {showEndPicker && (
+              <View style={[styles.inlinePickerContainer, { backgroundColor: theme === "light" ? "#f0f0f0" : "#2c2c2c" }]}>
+                <DateTimePicker
+                  value={endTime}
+                  mode="datetime"
+                  display="inline"
+                  locale="ja-JP"
+                  onChange={(event, selectedDate) => {
+                    if (selectedDate) {
+                      setEndTime(selectedDate);
+                    }
+                  }}
+                  themeVariant={theme}
+                />
+                <TouchableOpacity
+                  style={styles.pickerDoneButton}
+                  onPress={() => {
+                    setShowEndPicker(false);
+                  }}
+                >
+                  <Text style={styles.pickerDoneText}>完了</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             {/* 繰り返し選択 */}
@@ -582,6 +534,35 @@ export default function AddEventModal({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* 通知タイミング選択（通知がありの場合のみ表示） */}
+            {notification && (
+              <>
+                <Text style={[styles.label, { color: textColor }]}>通知タイミング</Text>
+                <View style={styles.notificationTimingContainer}>
+                  {[5, 15, 30, 60].map((minutes) => (
+                    <TouchableOpacity
+                      key={minutes}
+                      style={[
+                        styles.timingButton,
+                        { borderColor: textColor },
+                        notificationMinutesBefore === minutes && { backgroundColor: "#007AFF" },
+                      ]}
+                      onPress={() => setNotificationMinutesBefore(minutes)}
+                    >
+                      <Text
+                        style={{
+                          color: notificationMinutesBefore === minutes ? "#fff" : textColor,
+                          fontSize: 13,
+                        }}
+                      >
+                        {minutes >= 60 ? `${minutes / 60}時間前` : `${minutes}分前`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
           </ScrollView>
 
           {/* ボタン */}
@@ -647,6 +628,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     alignItems: "center",
+  },
+  dateTimeButtonFull: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    alignItems: "center",
+    marginTop: 4,
   },
   dateTimeLabel: {
     fontSize: 12,
@@ -743,6 +731,20 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: "center",
   },
+  notificationTimingContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  timingButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    paddingHorizontal: 16,
+    minWidth: 70,
+    alignItems: "center",
+  },
   buttonContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -776,6 +778,13 @@ const styles = StyleSheet.create({
     width: "100%",
     marginVertical: 8,
   },
+  inlinePickerContainer: {
+    width: "100%",
+    marginVertical: 12,
+    alignItems: "center",
+    borderRadius: 12,
+    padding: 12,
+  },
   pickerDoneButton: {
     backgroundColor: "#007AFF",
     padding: 12,
@@ -783,6 +792,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
     marginBottom: 12,
+    width: "100%",
   },
   pickerDoneText: {
     color: "#fff",
