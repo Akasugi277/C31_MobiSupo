@@ -45,3 +45,6 @@ app-example
 
 # Claude Code settings
 .claude/
+
+# backup folder
+C31_MobiSupo.bak/

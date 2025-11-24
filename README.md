@@ -106,18 +106,27 @@ Expo Goアプリでスキャンするか、エミュレーター/シミュレー
 ```
 src/
 ├── components/         # UIコンポーネント
+│   ├── AddEventModal.tsx
+│   ├── EventDetailModal.tsx
 │   ├── GoogleCalendarAuth.tsx
 │   ├── ShadowView.tsx
+│   ├── TabIcons.tsx
 │   └── ThemeContext.tsx
+├── navigation/        # ナビゲーション
+│   └── TabNavigator.tsx
 ├── screens/           # 画面コンポーネント
+│   ├── CalendarScreen.tsx
 │   ├── HomeScreen.tsx
-│   ├── ScheduleScreen.tsx
 │   └── SettingsScreen.tsx
 ├── services/          # APIサービス
 │   ├── calendarService.ts
-│   ├── weatherService.ts
+│   ├── holidayService.ts
+│   ├── notificationService.ts
 │   ├── routeService.ts
-│   └── storageService.ts
+│   ├── storageService.ts
+│   └── weatherService.ts
+├── utils/             # 共通ユーティリティ
+│   └── Logger.ts
 └── config.ts          # 設定ファイル
 ```
 
@@ -146,16 +155,9 @@ src/
 
 `.gitignore`に`.env`が含まれていることを確認してください。
 
-## ライセンス
-
-このプロジェクトはプライベート開発用です。
-
-## 作成者
-
-- あなたの名前
 
 ## 注意事項
 
 - 開発段階のアプリです
-- Google Calendar認証は簡易版（手動でコードをコピー＆ペースト）です
+- 現在(2025/11/10)Google Calendar認証は簡易版（手動でコードをコピー＆ペースト）です
 - App Storeへの公開は予定していません

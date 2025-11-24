@@ -10,8 +10,12 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./src/assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       }
+    },
+    "web": {
+      "favicon": "./src/assets/KosmosApp-icon.png"
     }
   }
 }

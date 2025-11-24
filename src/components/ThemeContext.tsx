@@ -16,7 +16,12 @@ export const ThemeContext = createContext<{
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setTheme] = useState<ThemeType>('light');
     const toggleTheme = () => setTheme(t => (t === 'light' ? 'dark' : 'light'));
-    const navigationTheme = theme === 'light' ? NavigationLightTheme : NavigationDarkTheme;
+    const lightText = 'rgb(33,33,33)';
+    const darkText = 'rgb(224,224,224)';
+    const navigationTheme: NavigationTheme =
+        theme === 'light'
+            ? { ...NavigationLightTheme, colors: { ...NavigationLightTheme.colors, text: lightText } }
+            : { ...NavigationDarkTheme, colors: { ...NavigationDarkTheme.colors, text: darkText } };
 
     return (
         <ThemeContext.Provider value={{ theme, toggleTheme, navigationTheme }}>

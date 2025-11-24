@@ -1,17 +1,19 @@
 // EventDetailModal.tsx
 // 予定詳細表示モーダル
 
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import {
-  Modal,
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
+    Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
-import { ThemeContext } from "./ThemeContext";
 import { EventData } from "./AddEventModal";
+import RouteMapModal from "./RouteMapModal";
+import { ThemeContext } from "./ThemeContext";
 
 interface EventDetailModalProps {
   visible: boolean;
@@ -30,12 +32,49 @@ export default function EventDetailModal({
   const bgColor = theme === "light" ? "#fff" : "#333";
   const textColor = theme === "light" ? "#000" : "#fff";
 
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [selectedRouteForMap, setSelectedRouteForMap] = useState<number>(0);
+
   if (!event) return null;
 
-  const handleDelete = () => {
-    if (onDelete) {
-      onDelete(event.id);
-      onClose();
+  const handleDelete = async () => {
+    if (!event) return;
+    Alert.alert('予定を削除', 'この予定を削除しますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: async () => {
+          await onDelete(event.id);
+          onClose();
+        },
+      },
+    ]);
+  };
+
+  const getModeText = (mode: string): string => {
+    switch (mode) {
+      case "walking":
+        return "徒歩";
+      case "transit":
+        return "電車";
+      case "driving":
+        return "車";
+      default:
+        return mode;
+    }
+  };
+
+  const getModeIcon = (mode: string): string => {
+    switch (mode) {
+      case "walking":
+        return "🚶";
+      case "transit":
+        return "🚆";
+      case "driving":
+        return "🚗";
+      default:
+        return "📍";
     }
   };
 
@@ -147,7 +186,66 @@ export default function EventDetailModal({
               <Text style={[styles.detailValue, { color: textColor }]}>
                 {event.notification ? "🔔 あり" : "🔕 なし"}
               </Text>
+              {event.notification && event.notificationMinutesBefore && (
+                <Text style={[styles.detailValue, { color: textColor, fontSize: 14, marginTop: 4, marginLeft: 4 }]}>
+                  {event.notificationMinutesBefore >= 60
+                    ? `${event.notificationMinutesBefore / 60}時間前に通知`
+                    : `${event.notificationMinutesBefore}分前に通知`}
+                </Text>
+              )}
             </View>
+
+            {/* ルート情報 */}
+            {event.routes && event.routes.length > 0 && (
+              <View style={styles.detailSection}>
+                <Text style={[styles.detailLabel, { color: textColor + "80" }]}>
+                  ルート情報（{event.routes.length}件）
+                </Text>
+                {event.routes.map((route, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.routeCard,
+                      { borderColor: textColor + "40" },
+                      event.selectedRouteIndex === index && styles.routeCardSelected,
+                    ]}
+                    onPress={() => {
+                      console.log("ルートカードをタップ:", index);
+                      console.log("ルートデータ:", route);
+                      console.log("座標情報:", {
+                        start: route.startLocation,
+                        end: route.endLocation
+                      });
+                      setSelectedRouteForMap(index);
+                      setShowMapModal(true);
+                    }}
+                  >
+                    <View style={styles.routeHeader}>
+                      <Text style={styles.routeIcon}>{getModeIcon(route.mode)}</Text>
+                      <Text style={[styles.routeMode, { color: textColor }]}>
+                        {getModeText(route.mode)}
+                      </Text>
+                      {event.selectedRouteIndex === index && (
+                        <View style={styles.selectedBadge}>
+                          <Text style={styles.selectedBadgeText}>選択中</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.routeDuration, { color: textColor }]}>
+                      所要時間: {route.durationText}
+                    </Text>
+                    {route.distance > 0 && (
+                      <Text style={[styles.routeDistance, { color: textColor + "80" }]}>
+                        距離: {route.distanceText}
+                      </Text>
+                    )}
+                    <Text style={[styles.routeMapLink, { color: "#007AFF" }]}>
+                      📍 マップで表示
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </ScrollView>
 
           {/* ボタン */}
@@ -169,6 +267,17 @@ export default function EventDetailModal({
           </View>
         </View>
       </View>
+
+      {/* ルートマップモーダル */}
+      {event.routes && event.routes[selectedRouteForMap] && (
+        <RouteMapModal
+          visible={showMapModal}
+          route={event.routes[selectedRouteForMap]}
+          startLocation={event.routes[selectedRouteForMap].startLocation}
+          endLocation={event.routes[selectedRouteForMap].endLocation}
+          onClose={() => setShowMapModal(false)}
+        />
+      )}
     </Modal>
   );
 }
@@ -227,6 +336,58 @@ const styles = StyleSheet.create({
   buttonText: {
     color: "#fff",
     fontSize: 16,
+    fontWeight: "600",
+  },
+  routeCard: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 8,
+    backgroundColor: "transparent",
+  },
+  routeCardSelected: {
+    backgroundColor: "#007AFF20",
+    borderColor: "#007AFF",
+  },
+  routeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  routeIcon: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  routeMode: {
+    fontSize: 16,
+    fontWeight: "bold",
+    flex: 1,
+  },
+  selectedBadge: {
+    backgroundColor: "#007AFF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  selectedBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  routeDuration: {
+    fontSize: 14,
+    marginLeft: 28,
+    marginBottom: 2,
+  },
+  routeDistance: {
+    fontSize: 13,
+    marginLeft: 28,
+    marginBottom: 4,
+  },
+  routeMapLink: {
+    fontSize: 14,
+    marginLeft: 28,
+    marginTop: 4,
     fontWeight: "600",
   },
 });

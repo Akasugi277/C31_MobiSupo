@@ -8,7 +8,7 @@ import {
   subWeeks,
 } from "date-fns";
 import { ja } from "date-fns/locale";
-import React, { useContext, useMemo, useState, useEffect } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
   Platform,
   ScrollView,
@@ -18,32 +18,77 @@ import {
   View,
 } from "react-native";
 import {
-  Agenda,
   DateData,
   Calendar as RNCalendar,
+  LocaleConfig,
 } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
 import EventDetailModal from "../components/EventDetailModal";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
+import * as holidayService from "../services/holidayService";
 import * as storageService from "../services/storageService";
+
+// 日本語ロケール設定
+LocaleConfig.locales["jp"] = {
+  monthNames: [
+    "1月",
+    "2月",
+    "3月",
+    "4月",
+    "5月",
+    "6月",
+    "7月",
+    "8月",
+    "9月",
+    "10月",
+    "11月",
+    "12月",
+  ],
+  monthNamesShort: [
+    "1月",
+    "2月",
+    "3月",
+    "4月",
+    "5月",
+    "6月",
+    "7月",
+    "8月",
+    "9月",
+    "10月",
+    "11月",
+    "12月",
+  ],
+  dayNames: [
+    "日曜日",
+    "月曜日",
+    "火曜日",
+    "水曜日",
+    "木曜日",
+    "金曜日",
+    "土曜日",
+  ],
+  dayNamesShort: ["日", "月", "火", "水", "木", "金", "土"],
+  today: "今日",
+};
+LocaleConfig.defaultLocale = "jp";
 
 // 祝日リストの型定義を追加
 type HolidayList = Record<string, string>;
 
-// 祝日リスト（実際はAPIで取得するなど）
-const HOLIDAYS: HolidayList = {
+// フォールバック用の静的祝日リスト
+const FALLBACK_HOLIDAYS: HolidayList = {
   "2025-01-01": "元日",
   "2025-01-13": "成人の日",
   // ...他の祝日
 };
 
-// 日付の色を判定
-function getDayColor(dateStr: string, textColor: string): string {
+// 日付の色を判定（holidays を引数で受け取る）
+function getDayColor(dateStr: string, textColor: string, holidays: HolidayList): string {
   const date = new Date(dateStr);
   const day = getDay(date);
-  if (HOLIDAYS[dateStr]) return "#ff4444";
+  if (holidays[dateStr]) return "#ff4444";
   if (day === 0) return "#ff4444"; // 日曜
   if (day === 6) return "#4444ff"; // 土曜
   return textColor;
@@ -53,8 +98,8 @@ type ViewMode = "day" | "week" | "month";
 
 export default function CalendarScreen() {
   const { theme } = useContext(ThemeContext);
+  const textColor = theme === "light" ? "rgb(33,33,33)" : "rgb(224,224,224)";
   const bgColor = theme === "light" ? "#fff" : "#333";
-  const textColor = theme === "light" ? "#000" : "#fff";
 
   const [mode, setMode] = useState<ViewMode>("week");
 
@@ -69,6 +114,9 @@ export default function CalendarScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
+
+  // 祝日データの状態管理
+  const [holidays, setHolidays] = useState<HolidayList>(FALLBACK_HOLIDAYS);
 
   // 初回マウント時に保存された予定を読み込む
   useEffect(() => {
@@ -94,6 +142,23 @@ export default function CalendarScreen() {
       console.error("予定読み込みエラー:", error);
     }
   };
+
+  // 祝日データを取得
+  useEffect(() => {
+    const loadHolidays = async () => {
+      try {
+        const data = await holidayService.fetchHolidays();
+        if (Object.keys(data).length > 0) {
+          setHolidays(data);
+        } else {
+          console.warn('祝日データが空のためフォールバックを使用');
+        }
+      } catch (error) {
+        console.error('祝日データ取得エラー:', error);
+      }
+    };
+    void loadHolidays();
+  }, []);
 
   // 予定をカレンダー形式に変換
   const items = useMemo(() => {
@@ -136,8 +201,14 @@ export default function CalendarScreen() {
   };
 
   // 予定を削除
-  const handleDeleteEvent = (eventId: string) => {
-    setEvents((prev) => prev.filter((e) => e.id !== eventId));
+  const handleDeleteEvent = async (eventId: string) => {
+    const updatedEvents = events.filter((e) => e.id !== eventId);
+    setEvents(updatedEvents);
+    // 削除後即座に保存
+    await storageService.saveEvents(updatedEvents);
+    // モーダルを閉じる
+    setShowDetailModal(false);
+    console.log('予定を削除しました:', eventId);
   };
 
   // Week の日配列（選択日が属する週: 日曜始まり）
@@ -179,7 +250,7 @@ export default function CalendarScreen() {
                   { color: mode === m ? "#fff" : textColor },
                 ]}
               >
-                {m === "week" ? "週間" : "月間"}
+                {m === "day" ? "日毎" : m === "week" ? "週間" : "月間"}
               </Text>
             </TouchableOpacity>
           ))}
@@ -201,6 +272,7 @@ export default function CalendarScreen() {
             selectedDate={selectedDate}
             onDayPress={(d) => setSelectedDate(d.dateString)}
             onEventPress={handleEventPress}
+            holidays={holidays}
           />
         )}
 
@@ -213,6 +285,7 @@ export default function CalendarScreen() {
             selectedDate={selectedDate}
             onSelectDate={(d) => setSelectedDate(d)}
             onEventPress={handleEventPress}
+            holidays={holidays}
           />
         )}
 
@@ -228,6 +301,7 @@ export default function CalendarScreen() {
                 setMode("week");
               }
             }}
+            holidays={holidays}
           />
         )}
       </ScrollView>
@@ -251,7 +325,7 @@ export default function CalendarScreen() {
   );
 }
 
-/* ---------- DayView : Agenda を使用して日毎の予定を表示 ---------- */
+/* ---------- DayView : 選択日の予定を縦スクロールで一覧表示 ---------- */
 function DayView({
   textColor,
   bgColor,
@@ -259,6 +333,7 @@ function DayView({
   selectedDate,
   onDayPress,
   onEventPress,
+  holidays,
 }: {
   textColor: string;
   bgColor: string;
@@ -266,56 +341,87 @@ function DayView({
   selectedDate: string;
   onDayPress: (d: DateData) => void;
   onEventPress: (eventId: string) => void;
+  holidays: HolidayList;
 }) {
-  // Agenda に渡す items に selectedDate のキーが無ければ空配列を注入して安全に動作させる
-  const agendaItems = { ...items };
-  if (!agendaItems[selectedDate]) {
-    agendaItems[selectedDate] = [];
-  }
-
-  // 日付を「2025年10月20日」形式で表示
+  // 日付を「2025年11月25日（月）」形式で表示
   let jpDate = "";
   try {
     const dateObj = parseISO(selectedDate);
-    jpDate = formatDate(dateObj, "yyyy年M月d日", { locale: ja });
+    jpDate = formatDate(dateObj, "yyyy年M月d日（E）", { locale: ja });
   } catch {
     jpDate = selectedDate;
   }
 
+  // 前日・次日の日付を計算
+  const prevDate = format(
+    addDays(parseISO(selectedDate), -1),
+    "yyyy-MM-dd"
+  );
+  const nextDate = format(
+    addDays(parseISO(selectedDate), 1),
+    "yyyy-MM-dd"
+  );
+
+  const dayEvents = items[selectedDate] || [];
+
   return (
     <>
+      {/* 日付ヘッダー（前日/次日ボタン付き） */}
       <ShadowView style={[styles.sectionHeader, { backgroundColor: "#000" }]}>
-        <Text style={[styles.sectionHeaderText]}>{jpDate}</Text>
+        <View style={styles.weekHeaderContainer}>
+          <TouchableOpacity
+            style={styles.weekChangeButton}
+            onPress={() =>
+              onDayPress({
+                dateString: prevDate,
+                day: parseInt(prevDate.split("-")[2], 10),
+                month: parseInt(prevDate.split("-")[1], 10),
+                year: parseInt(prevDate.split("-")[0], 10),
+                timestamp: parseISO(prevDate).getTime(),
+              })
+            }
+          >
+            <Text style={styles.weekChangeButtonText}>←前日</Text>
+          </TouchableOpacity>
+          <Text style={[styles.sectionHeaderText]}>{jpDate}</Text>
+          <TouchableOpacity
+            style={styles.weekChangeButton}
+            onPress={() =>
+              onDayPress({
+                dateString: nextDate,
+                day: parseInt(nextDate.split("-")[2], 10),
+                month: parseInt(nextDate.split("-")[1], 10),
+                year: parseInt(nextDate.split("-")[0], 10),
+                timestamp: parseISO(nextDate).getTime(),
+              })
+            }
+          >
+            <Text style={styles.weekChangeButtonText}>次日→</Text>
+          </TouchableOpacity>
+        </View>
       </ShadowView>
 
-      <Agenda
-        items={agendaItems as any}
-        selected={selectedDate}
-        renderItem={(item: any) => (
-          <TouchableOpacity onPress={() => onEventPress(item.id)}>
-            <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
-              <Text style={{ color: textColor }}>
-                {item.time} {item.title}
+      {/* 予定リスト */}
+      {dayEvents.length === 0 ? (
+        <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
+          <Text style={{ color: textColor }}>予定はありません</Text>
+        </ShadowView>
+      ) : (
+        dayEvents.map((event) => (
+          <TouchableOpacity
+            key={event.id}
+            onPress={() => onEventPress(event.id)}
+          >
+            <ShadowView
+              style={[styles.itemBox, { backgroundColor: bgColor }]}
+            >
+              <Text style={[styles.itemTime, { color: textColor }]}>
+                {event.time} {event.title}
               </Text>
             </ShadowView>
           </TouchableOpacity>
-        )}
-        renderEmptyDate={() => (
-          <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
-            <Text style={{ color: textColor }}>予定はありません</Text>
-          </ShadowView>
-        )}
-        rowHasChanged={() => true}
-        onDayPress={onDayPress}
-        theme={{
-          agendaDayTextColor: textColor,
-          agendaDayNumColor: textColor,
-          agendaTodayColor: "#ff5c5c",
-          backgroundColor: bgColor,
-          agendaKnobColor: "#888",
-        }}
-        style={{ backgroundColor: bgColor }}
-      />
+        ))
+      )}
     </>
   );
 }
@@ -329,6 +435,7 @@ function WeekView({
   selectedDate,
   onSelectDate,
   onEventPress,
+  holidays,
 }: {
   textColor: string;
   bgColor: string;
@@ -337,6 +444,7 @@ function WeekView({
   selectedDate: string;
   onSelectDate: (d: string) => void;
   onEventPress: (eventId: string) => void;
+  holidays: HolidayList;
 }) {
   // 週の範囲文字列を生成
   const weekRangeText = useMemo(() => {
@@ -381,7 +489,7 @@ function WeekView({
           const dayText = format(new Date(d), "E", { locale: ja });
           const has = items[d] && items[d].length > 0;
           const selected = d === selectedDate;
-          const dayColor = getDayColor(d, textColor);
+          const dayColor = getDayColor(d, textColor, holidays);
 
           return (
             <TouchableOpacity
@@ -456,11 +564,13 @@ function MonthView({
   bgColor,
   items,
   onDayPress,
+  holidays,
 }: {
   textColor: string;
   bgColor: string;
   items: Record<string, { id: string; time: string; title: string }[]>;
   onDayPress: (d: DateData) => void;
+  holidays: HolidayList;
 }) {
   // マーク付きの日付を準備
   const markedDates: MyMarkedDates = useMemo(() => {
@@ -477,15 +587,15 @@ function MonthView({
         dotColor: "#FF3B30",
       };
     });
-    Object.keys(HOLIDAYS).forEach((date) => {
+    Object.keys(holidays).forEach((date) => {
       marks[date] = {
         ...(marks[date] || {}),
         type: "holiday",
-        text: HOLIDAYS[date],
+        text: holidays[date],
       };
     });
     return marks;
-  }, [items]);
+  }, [items, holidays]);
 
   // テーマごとのカレンダー色設定
   const calendarTheme = {
