@@ -1,25 +1,24 @@
 // AddEventModal.tsx
 // 新規予定作成モーダル
 
-import React, { useState, useContext, useEffect } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import React, { useContext, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Modal,
-  View,
+  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  Platform,
+  View
 } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { ThemeContext } from "./ThemeContext";
-import * as weatherService from "../services/weatherService";
-import * as routeService from "../services/routeService";
 import * as notificationService from "../services/notificationService";
+import * as routeService from "../services/routeService";
 import * as storageService from "../services/storageService";
+import * as weatherService from "../services/weatherService";
+import { ThemeContext } from "./ThemeContext";
 
 interface AddEventModalProps {
   visible: boolean;
@@ -44,8 +43,6 @@ export interface EventData {
     departure: string;
     preparation: string;
   };
-  routes?: routeService.RouteInfo[]; // 複数のルート情報
-  selectedRouteIndex?: number; // 選択されたルートのインデックス
 }
 
 export default function AddEventModal({
@@ -61,6 +58,7 @@ export default function AddEventModal({
   // フォーム入力状態
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
   const [startTime, setStartTime] = useState(new Date());
   const [endTime, setEndTime] = useState(() => {
     const date = new Date();
@@ -70,16 +68,21 @@ export default function AddEventModal({
   const [travelTime, setTravelTime] = useState("");
   const [repeat, setRepeat] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [notification, setNotification] = useState(true);
-  const [notificationMinutesBefore, setNotificationMinutesBefore] = useState(15); // デフォルト15分前
 
-  // ピッカー表示状態
-  const [showStartPicker, setShowStartPicker] = useState(false);
-  const [showEndPicker, setShowEndPicker] = useState(false);
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   // ルート計算の状態
   const [calculating, setCalculating] = useState(false);
   const [routeOptions, setRouteOptions] = useState<routeService.RouteInfo[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
+
+  // 座標状態
+  const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number } | undefined>(
+    undefined
+  );
 
   // モーダルが開かれたときに時刻を初期化
   useEffect(() => {
@@ -304,8 +307,6 @@ export default function AddEventModal({
         notification,
         notificationMinutesBefore: notification ? notificationMinutesBefore : undefined,
         notificationIds,
-        routes: routeOptions.length > 0 ? routeOptions : undefined,
-        selectedRouteIndex: selectedRouteIndex !== null ? selectedRouteIndex : undefined,
       };
 
       onSave(eventData);
@@ -349,12 +350,14 @@ export default function AddEventModal({
   const resetForm = () => {
     setTitle("");
     setLocation("");
+    setDescription("");
     setTravelTime("");
     setRepeat("none");
     setNotification(true);
     setNotificationMinutesBefore(15); // デフォルトに戻す
     setRouteOptions([]);
     setSelectedRouteIndex(null);
+    setCoordinates(undefined);
     onClose();
   };
 
@@ -371,6 +374,14 @@ export default function AddEventModal({
       default:
         return repeat;
     }
+  };
+
+  // 地図から場所を選択（簡易版：Google Places Autocomplete または Map Picker）
+  const handleOpenMapPicker = () => {
+    // 実装例：Expo Location + react-native-maps を使った座標選択
+    // または Google Places API Autocomplete を使った住所検索
+    Alert.alert("地図選択", "地図から場所を選択する機能は開発中です。\n現在は手入力で住所を入力してください。");
+    // TODO: MapPickerModal を開く
   };
 
   return (
@@ -392,12 +403,27 @@ export default function AddEventModal({
 
             {/* 場所入力（任意） */}
             <Text style={[styles.label, { color: textColor }]}>場所（任意）</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TextInput
+                style={[styles.input, { flex: 1, color: textColor, borderColor: textColor }]}
+                placeholder="場所を入力"
+                placeholderTextColor={textColor + "80"}
+                value={location}
+                onChangeText={setLocation}
+              />
+              <TouchableOpacity style={styles.mapButton} onPress={handleOpenMapPicker}>
+                <Text style={styles.mapButtonText}>📍 地図</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 説明入力（任意） */}
+            <Text style={[styles.label, { color: textColor }]}>説明（任意）</Text>
             <TextInput
               style={[styles.input, { color: textColor, borderColor: textColor }]}
-              placeholder="例: 会議室A"
+              placeholder="例: 重要な会議です"
               placeholderTextColor={textColor + "80"}
-              value={location}
-              onChangeText={setLocation}
+              value={description}
+              onChangeText={setDescription}
             />
 
             {/* 移動時間自動計算 */}
@@ -907,5 +933,15 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  mapButton: {
+    backgroundColor: "#007AFF",
+    padding: 12,
+    borderRadius: 8,
+    justifyContent: "center",
+  },
+  mapButtonText: {
+    color: "#fff",
+    fontSize: 14,
   },
 });

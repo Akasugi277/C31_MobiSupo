@@ -20,7 +20,8 @@ interface EventDetailModalProps {
   visible: boolean;
   event: EventData | null;
   onClose: () => void;
-  onDelete?: (eventId: string) => void;
+  onDelete: (eventId: string) => void;
+  onEdit?: (event: EventData) => void; // 追加
 }
 
 export default function EventDetailModal({
@@ -28,6 +29,7 @@ export default function EventDetailModal({
   event,
   onClose,
   onDelete,
+  onEdit,
 }: EventDetailModalProps) {
   const { theme } = useContext(ThemeContext);
   const bgColor = theme === "light" ? "#fff" : "#333";
@@ -101,6 +103,13 @@ export default function EventDetailModal({
     }
   };
 
+  const handleEdit = () => {
+    if (event && onEdit) {
+      onEdit(event);
+      onClose();
+    }
+  };
+
   const getRepeatText = (repeat: string): string => {
     switch (repeat) {
       case "none":
@@ -117,7 +126,7 @@ export default function EventDetailModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={true}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: bgColor }]}>
           <ScrollView>
@@ -273,20 +282,23 @@ export default function EventDetailModal({
 
           {/* ボタン */}
           <View style={styles.buttonContainer}>
+            {onEdit && (
+              <TouchableOpacity style={[styles.button, styles.editButton]} onPress={handleEdit}>
+                <Text style={styles.buttonText}>編集</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.button, styles.deleteButton]}
+              onPress={handleDelete}
+            >
+              <Text style={styles.buttonText}>削除</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={onClose}
             >
               <Text style={styles.buttonText}>閉じる</Text>
             </TouchableOpacity>
-            {onDelete && (
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={handleDelete}
-              >
-                <Text style={styles.buttonText}>削除</Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       </View>
@@ -352,6 +364,13 @@ const styles = StyleSheet.create({
   deleteButton: {
     flex: 1,
     backgroundColor: "#FF3B30",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  editButton: {
+    flex: 1,
+    backgroundColor: "#007AFF",
     padding: 12,
     borderRadius: 8,
     alignItems: "center",
