@@ -4,14 +4,14 @@
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 
-// 通知の設定
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// 通知の設定（この設定はapp.tsxに移動したので削除可能）
+// Notifications.setNotificationHandler({
+//   handleNotification: async () => ({
+//     shouldShowAlert: true,
+//     shouldPlaySound: true,
+//     shouldSetBadge: false,
+//   }),
+// });
 
 /**
  * プッシュ通知の権限を取得
@@ -84,7 +84,8 @@ export async function scheduleDepartureNotification(
 export async function schedulePreparationNotification(
   preparationTime: Date,
   destination: string,
-  minutesBeforeDeparture: number
+  minutesBeforeDeparture: number,
+  weatherMessage?: string
 ): Promise<string> {
   try {
     const now = new Date();
@@ -92,24 +93,51 @@ export async function schedulePreparationNotification(
       (preparationTime.getTime() - now.getTime()) / 1000
     );
 
+    console.log("📢 [notificationService] 通知スケジュール開始");
+    console.log("  現在時刻:", now.toISOString());
+    console.log("  通知時刻:", preparationTime.toISOString());
+    console.log("  目的地:", destination);
+    console.log("  出発まで:", minutesBeforeDeparture, "分");
+    console.log("  天気情報:", weatherMessage || "なし");
+    console.log("  通知までの秒数:", secondsUntilPreparation, "秒");
+
     if (secondsUntilPreparation <= 0) {
+      console.error("❌ 準備時刻が過去です:", secondsUntilPreparation, "秒");
       throw new Error("準備時刻が過去です");
+    }
+
+    console.log("⏰ 通知を", secondsUntilPreparation, "秒後にスケジュールします");
+    console.log("⏰ 絶対時刻:", preparationTime.toISOString());
+
+    // 通知メッセージを構築
+    let notificationBody = `${minutesBeforeDeparture}分後に${destination}へ出発です`;
+    if (weatherMessage) {
+      notificationBody += `\n${weatherMessage}`;
     }
 
     const notificationId = await Notifications.scheduleNotificationAsync({
       content: {
         title: "⏰ 準備を始めましょう",
-        body: `${minutesBeforeDeparture}分後に${destination}へ出発です`,
+        body: notificationBody,
         sound: true,
+        data: {
+          scheduledFor: preparationTime.toISOString(),
+          destination: destination,
+          weather: weatherMessage,
+        },
       },
       trigger: {
-        seconds: secondsUntilPreparation,
-      },
+        // 相対時刻（秒数）ではなく、絶対時刻を使用
+        type: 'date',
+        date: preparationTime.getTime(),
+      } as any,
     });
+
+    console.log("✅ 通知スケジュール完了。ID:", notificationId);
 
     return notificationId;
   } catch (error) {
-    console.error("準備通知のスケジュールに失敗:", error);
+    console.error("❌ 準備通知のスケジュールに失敗:", error);
     throw error;
   }
 }

@@ -18,7 +18,6 @@ import {
   View,
 } from "react-native";
 import {
-  Agenda,
   DateData,
   Calendar as RNCalendar,
   LocaleConfig,
@@ -29,6 +28,11 @@ import EventDetailModal from "../components/EventDetailModal";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
 import * as storageService from "../services/storageService";
+
+// カレンダーアイテム型定義
+type CalendarItems = {
+  [date: string]: Array<{ id: string; time: string; title: string }>;
+};
 
 // 日本語ロケール設定
 LocaleConfig.locales["jp"] = {
@@ -94,7 +98,7 @@ function getDayColor(dateStr: string, textColor: string): string {
   return textColor;
 }
 
-type ViewMode = "day" | "week" | "month";
+type ViewMode = "week" | "month";
 
 export default function CalendarScreen() {
   const { theme } = useContext(ThemeContext);
@@ -142,10 +146,7 @@ export default function CalendarScreen() {
 
   // 予定をカレンダー形式に変換
   const items = useMemo(() => {
-    const itemsMap: Record<
-      string,
-      { id: string; time: string; title: string }[]
-    > = {};
+    const itemsMap: CalendarItems = {};
 
     events.forEach((event) => {
       const dateKey = event.startTime.toISOString().slice(0, 10);
@@ -209,7 +210,7 @@ export default function CalendarScreen() {
       {/* ヘッダー: 表示モード切り替え + 予定追加ボタン */}
       <View style={styles.headerContainer}>
         <View style={styles.segmentContainer}>
-          {(["day", "week", "month"] as ViewMode[]).map((m) => (
+          {(["week", "month"] as ViewMode[]).map((m) => (
             <TouchableOpacity
               key={m}
               onPress={() => setMode(m)}
@@ -238,17 +239,6 @@ export default function CalendarScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {mode === "day" && (
-          <DayView
-            textColor={textColor}
-            bgColor={bgColor}
-            items={items}
-            selectedDate={selectedDate}
-            onDayPress={(d) => setSelectedDate(d.dateString)}
-            onEventPress={handleEventPress}
-          />
-        )}
-
         {mode === "week" && (
           <WeekView
             textColor={textColor}
@@ -296,75 +286,6 @@ export default function CalendarScreen() {
   );
 }
 
-/* ---------- DayView : Agenda を使用して日毎の予定を表示 ---------- */
-function DayView({
-  textColor,
-  bgColor,
-  items,
-  selectedDate,
-  onDayPress,
-  onEventPress,
-}: {
-  textColor: string;
-  bgColor: string;
-  items: Record<string, { id: string; time: string; title: string }[]>;
-  selectedDate: string;
-  onDayPress: (d: DateData) => void;
-  onEventPress: (eventId: string) => void;
-}) {
-  // Agenda に渡す items に selectedDate のキーが無ければ空配列を注入して安全に動作させる
-  const agendaItems = { ...items };
-  if (!agendaItems[selectedDate]) {
-    agendaItems[selectedDate] = [];
-  }
-
-  // 日付を「2025年10月20日」形式で表示
-  let jpDate = "";
-  try {
-    const dateObj = parseISO(selectedDate);
-    jpDate = formatDate(dateObj, "yyyy年M月d日", { locale: ja });
-  } catch {
-    jpDate = selectedDate;
-  }
-
-  return (
-    <>
-      <ShadowView style={[styles.sectionHeader, { backgroundColor: "#000" }]}>
-        <Text style={[styles.sectionHeaderText]}>{jpDate}</Text>
-      </ShadowView>
-
-      <Agenda
-        items={agendaItems as any}
-        selected={selectedDate}
-        renderItem={(item: any) => (
-          <TouchableOpacity onPress={() => onEventPress(item.id)}>
-            <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
-              <Text style={{ color: textColor }}>
-                {item.time} {item.title}
-              </Text>
-            </ShadowView>
-          </TouchableOpacity>
-        )}
-        renderEmptyDate={() => (
-          <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
-            <Text style={{ color: textColor }}>予定はありません</Text>
-          </ShadowView>
-        )}
-        rowHasChanged={() => true}
-        onDayPress={onDayPress}
-        theme={{
-          agendaDayTextColor: textColor,
-          agendaDayNumColor: textColor,
-          agendaTodayColor: "#ff5c5c",
-          backgroundColor: bgColor,
-          agendaKnobColor: "#888",
-        }}
-        style={{ backgroundColor: bgColor }}
-      />
-    </>
-  );
-}
-
 /* ---------- WeekView : 週の日を横並びで選べる簡易ビュー ---------- */
 function WeekView({
   textColor,
@@ -378,7 +299,7 @@ function WeekView({
   textColor: string;
   bgColor: string;
   weekDates: string[];
-  items: Record<string, { id: string; time: string; title: string }[]>;
+  items: CalendarItems;
   selectedDate: string;
   onSelectDate: (d: string) => void;
   onEventPress: (eventId: string) => void;
@@ -504,7 +425,7 @@ function MonthView({
 }: {
   textColor: string;
   bgColor: string;
-  items: Record<string, { id: string; time: string; title: string }[]>;
+  items: CalendarItems;
   onDayPress: (d: DateData) => void;
 }) {
   // マーク付きの日付を準備
@@ -573,7 +494,7 @@ function MonthView({
         <Text style={styles.monthHeaderText}>{japaneseMonthTitle}</Text>
       </ShadowView>
       <RNCalendar
-        markedDates={markedDates as any}
+        markedDates={markedDates}
         onDayPress={onDayPress}
         firstDay={0}
         enableSwipeMonths={true}
@@ -586,13 +507,12 @@ function MonthView({
           dayTextColor: textColor,
           textDisabledColor: textColor + "40",
           monthTextColor: textColor,
-          textMonthFontWeight: "700" as any,
+          textMonthFontWeight: "700",
           textDayFontSize: 16,
           textMonthFontSize: 16,
           textDayHeaderFontSize: 14,
           arrowColor: textColor,
-          backgroundColor: bgColor,
-        } as any}
+        }}
         markingType={"custom"}
         // 月が変わった時にタイトルを更新
         onMonthChange={(dateObj) => {
@@ -603,9 +523,10 @@ function MonthView({
         dayComponent={({ date, state, marking }) => {
           if (!date) return null;
           const isDisabled = state === "disabled";
-          const isHoliday = (marking as any)?.type === "holiday";
-          const isSelected = marking?.selected;
-          const hasEvents = marking?.marked;
+          const customMarking = marking as MyMarkedDates[string] | undefined;
+          const isHoliday = customMarking?.type === "holiday";
+          const isSelected = customMarking?.selected;
+          const hasEvents = customMarking?.marked;
           const dayNum = new Date(date.timestamp).getDay();
           let dayColor = textColor;
           if (isHoliday || dayNum === 0) dayColor = "#FF3B30";
@@ -650,8 +571,8 @@ function MonthView({
                   ]}
                 />
               )}
-              {isHoliday && (
-                <Text style={styles.holidayText}>{(marking as any).text}</Text>
+              {isHoliday && customMarking?.text && (
+                <Text style={styles.holidayText}>{customMarking.text}</Text>
               )}
             </TouchableOpacity>
           );

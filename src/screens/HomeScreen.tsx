@@ -24,7 +24,9 @@ import {
   getGoogleCalendarToken,
   isGoogleCalendarAuthenticated,
   saveGoogleCalendarToken,
+  getEvents,
 } from "../services/storageService";
+import { EventData } from "../components/AddEventModal";
 import {
   AddressData,
   getCurrentAddress,
@@ -47,6 +49,9 @@ export default function HomeScreen() {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // ローカル予定の状態管理
+  const [localEvents, setLocalEvents] = useState<EventData[]>([]);
 
   // 天気と住所を取得する関数
   const fetchWeatherAndAddress = async () => {
@@ -84,11 +89,22 @@ export default function HomeScreen() {
     }
   };
 
+  // ローカル予定を取得する関数
+  const fetchLocalEvents = async () => {
+    try {
+      const events = await getEvents();
+      setLocalEvents(events);
+      console.log(`ローカルから${events.length}件の予定を取得しました`);
+    } catch (error) {
+      console.error("ローカル予定の取得に失敗:", error);
+    }
+  };
+
   // 初回レンダリング時に天気と住所、カレンダーを取得
   useEffect(() => {
     const initialize = async () => {
       setLoading(true);
-      await Promise.all([fetchWeatherAndAddress(), fetchCalendarData()]);
+      await Promise.all([fetchWeatherAndAddress(), fetchCalendarData(), fetchLocalEvents()]);
       setLoading(false);
     };
 
@@ -98,7 +114,7 @@ export default function HomeScreen() {
   // スワイプで更新する処理
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchWeatherAndAddress(), fetchCalendarData()]);
+    await Promise.all([fetchWeatherAndAddress(), fetchCalendarData(), fetchLocalEvents()]);
     setRefreshing(false);
   };
 
@@ -158,6 +174,32 @@ export default function HomeScreen() {
     });
   };
 
+  // ローカル予定を今日と明日に分類
+  const getTodayLocalEvents = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    return localEvents.filter((event) => {
+      const eventDate = new Date(event.startTime);
+      return eventDate >= today && eventDate < tomorrow;
+    });
+  };
+
+  const getTomorrowLocalEvents = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+    const dayAfterTomorrow = new Date(tomorrow);
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+    return localEvents.filter((event) => {
+      const eventDate = new Date(event.startTime);
+      return eventDate >= tomorrow && eventDate < dayAfterTomorrow;
+    });
+  };
+
   // イベントを時刻文字列に変換
   const formatEventTime = (date: Date) => {
     const hours = date.getHours().toString().padStart(2, "0");
@@ -167,6 +209,8 @@ export default function HomeScreen() {
 
   const todayEvents = getTodayEvents();
   const tomorrowEvents = getTomorrowEvents();
+  const todayLocalEvents = getTodayLocalEvents();
+  const tomorrowLocalEvents = getTomorrowLocalEvents();
 
   return (
     <SafeAreaView
@@ -241,35 +285,50 @@ export default function HomeScreen() {
               本日 {new Date().toLocaleDateString("ja-JP")}
             </Text>
           </View>
-          {todayEvents.length > 0 ? (
-            todayEvents.map((event) => (
-              <ShadowView
-                key={event.id}
-                style={[styles.itemBox, { backgroundColor: bgColor }]}
-              >
-                <Text style={[styles.itemTime, { color: textColor }]}>
-                  ▶ {formatEventTime(event.start)} {event.title}
+          {/* Google Calendarの予定 */}
+          {todayEvents.length > 0 && todayEvents.map((event) => (
+            <ShadowView
+              key={`gcal-${event.id}`}
+              style={[styles.itemBox, { backgroundColor: bgColor }]}
+            >
+              <Text style={[styles.itemTime, { color: textColor }]}>
+                ▶ {formatEventTime(event.start)} {event.title}
+              </Text>
+              {event.location && (
+                <Text style={[styles.itemDetail, { color: textColor }]}>
+                  └ 場所: {event.location}
                 </Text>
-                {event.location && (
-                  <Text style={[styles.itemDetail, { color: textColor }]}>
-                    └ 場所: {event.location}
-                  </Text>
-                )}
-                {event.description && (
-                  <Text style={[styles.itemDetail, { color: textColor }]}>
-                    └ {event.description}
-                  </Text>
-                )}
-              </ShadowView>
-            ))
-          ) : (
+              )}
+              {event.description && (
+                <Text style={[styles.itemDetail, { color: textColor }]}>
+                  └ {event.description}
+                </Text>
+              )}
+            </ShadowView>
+          ))}
+          {/* ローカル予定 */}
+          {todayLocalEvents.length > 0 && todayLocalEvents.map((event) => (
+            <ShadowView
+              key={`local-${event.id}`}
+              style={[styles.itemBox, { backgroundColor: bgColor }]}
+            >
+              <Text style={[styles.itemTime, { color: textColor }]}>
+                ▶ {formatEventTime(event.startTime)} {event.title}
+              </Text>
+              {event.location && (
+                <Text style={[styles.itemDetail, { color: textColor }]}>
+                  └ 場所: {event.location}
+                </Text>
+              )}
+            </ShadowView>
+          ))}
+          {/* 予定がない場合 */}
+          {todayEvents.length === 0 && todayLocalEvents.length === 0 && (
             <ShadowView
               style={[styles.itemBox, { backgroundColor: bgColor }]}
             >
               <Text style={[styles.itemTime, { color: textColor }]}>
-                {isAuthenticated
-                  ? "今日の予定はありません"
-                  : "Google Calendarと連携して予定を表示"}
+                今日の予定はありません
               </Text>
             </ShadowView>
           )}
@@ -281,35 +340,50 @@ export default function HomeScreen() {
               明日 {new Date(Date.now() + 86400000).toLocaleDateString("ja-JP")}の予定
             </Text>
           </View>
-          {tomorrowEvents.length > 0 ? (
-            tomorrowEvents.map((event) => (
-              <ShadowView
-                key={event.id}
-                style={[styles.itemBox, { backgroundColor: bgColor }]}
-              >
-                <Text style={[styles.itemTime, { color: textColor }]}>
-                  ▶ {formatEventTime(event.start)} {event.title}
+          {/* Google Calendarの予定 */}
+          {tomorrowEvents.length > 0 && tomorrowEvents.map((event) => (
+            <ShadowView
+              key={`gcal-${event.id}`}
+              style={[styles.itemBox, { backgroundColor: bgColor }]}
+            >
+              <Text style={[styles.itemTime, { color: textColor }]}>
+                ▶ {formatEventTime(event.start)} {event.title}
+              </Text>
+              {event.location && (
+                <Text style={[styles.itemDetail, { color: textColor }]}>
+                  └ 場所: {event.location}
                 </Text>
-                {event.location && (
-                  <Text style={[styles.itemDetail, { color: textColor }]}>
-                    └ 場所: {event.location}
-                  </Text>
-                )}
-                {event.description && (
-                  <Text style={[styles.itemDetail, { color: textColor }]}>
-                    └ {event.description}
-                  </Text>
-                )}
-              </ShadowView>
-            ))
-          ) : (
+              )}
+              {event.description && (
+                <Text style={[styles.itemDetail, { color: textColor }]}>
+                  └ {event.description}
+                </Text>
+              )}
+            </ShadowView>
+          ))}
+          {/* ローカル予定 */}
+          {tomorrowLocalEvents.length > 0 && tomorrowLocalEvents.map((event) => (
+            <ShadowView
+              key={`local-${event.id}`}
+              style={[styles.itemBox, { backgroundColor: bgColor }]}
+            >
+              <Text style={[styles.itemTime, { color: textColor }]}>
+                ▶ {formatEventTime(event.startTime)} {event.title}
+              </Text>
+              {event.location && (
+                <Text style={[styles.itemDetail, { color: textColor }]}>
+                  └ 場所: {event.location}
+                </Text>
+              )}
+            </ShadowView>
+          ))}
+          {/* 予定がない場合 */}
+          {tomorrowEvents.length === 0 && tomorrowLocalEvents.length === 0 && (
             <ShadowView
               style={[styles.itemBox, { backgroundColor: bgColor }]}
             >
               <Text style={[styles.itemTime, { color: textColor }]}>
-                {isAuthenticated
-                  ? "明日の予定はありません"
-                  : "Google Calendarと連携して予定を表示"}
+                明日の予定はありません
               </Text>
             </ShadowView>
           )}
@@ -321,13 +395,16 @@ export default function HomeScreen() {
           </View>
           <ShadowView style={[styles.summaryBox, { backgroundColor: bgColor }]}>
             <Text style={[styles.summaryText, { color: textColor }]}>
-              今日の予定：{todayEvents.length}件
+              今日の予定：{todayEvents.length + todayLocalEvents.length}件
             </Text>
             <Text style={[styles.summaryText, { color: textColor }]}>
-              明日の予定：{tomorrowEvents.length}件
+              明日の予定：{tomorrowEvents.length + tomorrowLocalEvents.length}件
             </Text>
             <Text style={[styles.summaryText, { color: textColor }]}>
-              全予定：{calendarEvents.length}件
+              全予定（Google）：{calendarEvents.length}件
+            </Text>
+            <Text style={[styles.summaryText, { color: textColor }]}>
+              全予定（ローカル）：{localEvents.length}件
             </Text>
           </ShadowView>
         </View>

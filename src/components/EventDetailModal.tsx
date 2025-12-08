@@ -9,10 +9,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
 } from "react-native";
 import { ThemeContext } from "./ThemeContext";
 import { EventData } from "./AddEventModal";
 import RouteMapModal from "./RouteMapModal";
+import * as notificationService from "../services/notificationService";
 
 interface EventDetailModalProps {
   visible: boolean;
@@ -36,11 +38,41 @@ export default function EventDetailModal({
 
   if (!event) return null;
 
-  const handleDelete = () => {
-    if (onDelete) {
-      onDelete(event.id);
-      onClose();
-    }
+  const handleDelete = async () => {
+    if (!onDelete) return;
+
+    Alert.alert(
+      "予定を削除",
+      "この予定を削除しますか？\n関連する通知も削除されます。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "削除",
+          style: "destructive",
+          onPress: async () => {
+            // 通知をキャンセル
+            if (event.notificationIds) {
+              try {
+                if (event.notificationIds.departure) {
+                  await notificationService.cancelNotification(event.notificationIds.departure);
+                  console.log("出発通知をキャンセルしました:", event.notificationIds.departure);
+                }
+                if (event.notificationIds.preparation) {
+                  await notificationService.cancelNotification(event.notificationIds.preparation);
+                  console.log("準備通知をキャンセルしました:", event.notificationIds.preparation);
+                }
+              } catch (error) {
+                console.error("通知キャンセルエラー:", error);
+              }
+            }
+
+            // 予定を削除
+            onDelete(event.id);
+            onClose();
+          },
+        },
+      ]
+    );
   };
 
   const getModeText = (mode: string): string => {

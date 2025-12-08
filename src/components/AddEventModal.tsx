@@ -19,6 +19,7 @@ import { ThemeContext } from "./ThemeContext";
 import * as weatherService from "../services/weatherService";
 import * as routeService from "../services/routeService";
 import * as notificationService from "../services/notificationService";
+import * as storageService from "../services/storageService";
 
 interface AddEventModalProps {
   visible: boolean;
@@ -185,32 +186,108 @@ export default function AddEventModal({
 
     try {
       let notificationIds: any = undefined;
+      let notificationTime: Date | null = null;
+      let weatherInfo: weatherService.WeatherData | undefined = undefined;
+      let adjustedMinutesBefore = notificationMinutesBefore;
+      let weatherMessage = "";
 
       // 通知が有効な場合、指定された時間前に通知をスケジュール
       if (notification) {
-        // 通知時刻を計算（開始時刻 - 指定分数）
-        const notificationTime = new Date(startTime.getTime() - notificationMinutesBefore * 60 * 1000);
+        // 天気情報を取得して通知時刻を調整
+
+        if (location.trim() && routeOptions.length > 0 && selectedRouteIndex !== null) {
+          try {
+            // ユーザーの天気通知設定を取得
+            const weatherSettings = await storageService.getWeatherNotificationSettings();
+
+            if (weatherSettings.enabled) {
+              // 選択されたルートの目的地座標から天気を取得
+              const selectedRoute = routeOptions[selectedRouteIndex];
+              if (selectedRoute.endLocation) {
+                console.log("🌤️ 目的地の天気情報を取得中...");
+                weatherInfo = await weatherService.getWeatherByCoords(selectedRoute.endLocation);
+
+                // 天気に応じて追加する分数を決定
+                let extraMinutes = 0;
+                if (weatherInfo.main === "Rain") {
+                  extraMinutes = weatherSettings.rainMinutes;
+                } else if (weatherInfo.main === "Snow") {
+                  extraMinutes = weatherSettings.snowMinutes;
+                } else if (weatherInfo.main === "Thunderstorm") {
+                  extraMinutes = weatherSettings.thunderstormMinutes;
+                } else if (weatherInfo.main === "Clouds") {
+                  extraMinutes = weatherSettings.cloudyMinutes;
+                }
+
+                if (extraMinutes > 0) {
+                  // 天気が悪い場合、通知時刻を早める
+                  adjustedMinutesBefore = notificationMinutesBefore + extraMinutes;
+
+                  weatherMessage = `${weatherInfo.emoji} 天気: ${weatherInfo.description}（${extraMinutes}分早めに通知）`;
+                  console.log(`⚠️ 天気により通知を${extraMinutes}分早めました（${notificationMinutesBefore}分 → ${adjustedMinutesBefore}分）`);
+                } else {
+                  weatherMessage = `${weatherInfo.emoji} 天気: ${weatherInfo.description}`;
+                }
+              }
+            } else {
+              console.log("ℹ️ 天気連動通知は無効になっています");
+            }
+          } catch (weatherError) {
+            console.warn("天気情報の取得に失敗しました:", weatherError);
+            // 天気取得失敗時は通常通り通知
+          }
+        }
+
+        // 通知時刻を計算（開始時刻 - 調整された分数）
+        notificationTime = new Date(startTime.getTime() - adjustedMinutesBefore * 60 * 1000);
         const now = new Date();
 
-        // 通知時刻が少なくとも10秒以上未来の場合のみスケジュール
+        // 通知時刻が未来かどうか確認（最低60秒以上未来である必要がある）
         const secondsUntilNotification = Math.floor((notificationTime.getTime() - now.getTime()) / 1000);
 
-        if (secondsUntilNotification > 10) {
-          const notifId = await notificationService.schedulePreparationNotification(
-            notificationTime,
-            location.trim() || title,
-            notificationMinutesBefore
-          );
+        console.log("=== 通知スケジュール情報 ===");
+        console.log("現在時刻:", now.toLocaleString("ja-JP"), "| Timestamp:", now.getTime());
+        console.log("予定開始時刻:", startTime.toLocaleString("ja-JP"), "| Timestamp:", startTime.getTime());
+        console.log("通知時刻:", notificationTime.toLocaleString("ja-JP"), "| Timestamp:", notificationTime.getTime());
+        console.log("通知までの秒数:", secondsUntilNotification, "秒 (", Math.floor(secondsUntilNotification / 60), "分)");
+        console.log("通知タイミング:", adjustedMinutesBefore, "分前（元:", notificationMinutesBefore, "分前）");
+        console.log("天気情報:", weatherMessage || "なし");
+        console.log("時間差チェック:");
+        console.log("  開始時刻 - 現在時刻 =", (startTime.getTime() - now.getTime()) / 1000 / 60, "分");
+        console.log("  通知時刻 - 現在時刻 =", (notificationTime.getTime() - now.getTime()) / 1000 / 60, "分");
 
-          notificationIds = {
-            departure: notifId,
-            preparation: notifId,
-          };
+        if (secondsUntilNotification > 60) {
+          try {
+            const notifId = await notificationService.schedulePreparationNotification(
+              notificationTime,
+              location.trim() || title,
+              adjustedMinutesBefore,
+              weatherMessage || undefined
+            );
+
+            notificationIds = {
+              departure: notifId,
+              preparation: notifId,
+            };
+
+            console.log("✅ 通知をスケジュールしました。ID:", notifId);
+          } catch (error) {
+            console.error("❌ 通知スケジュールエラー:", error);
+            Alert.alert(
+              "通知エラー",
+              "通知のスケジュールに失敗しました。通知権限を確認してください。"
+            );
+          }
         } else {
           // 通知時刻が過去または近すぎる場合は警告
+          const minutesUntil = Math.floor(secondsUntilNotification / 60);
           Alert.alert(
             "通知について",
-            "指定された通知時刻が過去または近すぎるため、通知はスケジュールされませんでした。"
+            `通知時刻が${minutesUntil > 0 ? "近すぎる" : "過去"}ため、通知はスケジュールされませんでした。\n\n` +
+            `現在時刻: ${now.toLocaleTimeString("ja-JP")}\n` +
+            `予定開始: ${startTime.toLocaleTimeString("ja-JP")}\n` +
+            `通知予定: ${notificationTime.toLocaleTimeString("ja-JP")}\n\n` +
+            "通知は予定開始の少なくとも1分以上前に設定してください。"
           );
         }
       }
@@ -234,7 +311,35 @@ export default function AddEventModal({
       onSave(eventData);
       resetForm();
 
-      Alert.alert("成功", "予定を作成しました");
+      // 成功メッセージに通知情報を含める
+      let successMessage = "✅ 予定を作成しました";
+      if (notification && notificationIds && notificationTime) {
+        const notificationDate = notificationTime.toLocaleDateString("ja-JP", {
+          month: "2-digit",
+          day: "2-digit",
+        });
+        const notificationTimeStr = notificationTime.toLocaleTimeString("ja-JP", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        successMessage += `\n\n📲 通知予定:\n${notificationDate} ${notificationTimeStr}`;
+
+        // 天気による調整情報を表示
+        if (adjustedMinutesBefore !== notificationMinutesBefore) {
+          successMessage += `\n（${adjustedMinutesBefore}分前）`;
+          successMessage += `\n${weatherMessage}`;
+        } else {
+          successMessage += `\n（${notificationMinutesBefore}分前）`;
+          if (weatherMessage) {
+            successMessage += `\n${weatherMessage}`;
+          }
+        }
+
+        successMessage += `\n\n※これはダイアログです。実際の通知は予定時刻に届きます。`;
+      } else if (notification && !notificationIds) {
+        successMessage += "\n\n⚠️ 通知時刻が過去のため、通知はスケジュールされませんでした。";
+      }
+      Alert.alert("📝 予定作成", successMessage);
     } catch (error) {
       console.error("予定保存エラー:", error);
       Alert.alert("エラー", "予定の保存に失敗しました");
@@ -406,7 +511,11 @@ export default function AddEventModal({
                   mode="datetime"
                   display="inline"
                   locale="ja-JP"
+                  minimumDate={new Date()}
                   onChange={(event, selectedDate) => {
+                    console.log("📅 開始日時選択:");
+                    console.log("  選択された日時:", selectedDate?.toLocaleString("ja-JP"));
+                    console.log("  Timestamp:", selectedDate?.getTime());
                     if (selectedDate) {
                       setStartTime(selectedDate);
                     }

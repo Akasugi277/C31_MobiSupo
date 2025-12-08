@@ -8,6 +8,25 @@ const KEYS = {
   GOOGLE_CALENDAR_ACCESS_TOKEN: "@google_calendar_access_token",
   GOOGLE_CALENDAR_REFRESH_TOKEN: "@google_calendar_refresh_token",
   EVENTS: "@events",
+  WEATHER_NOTIFICATION_SETTINGS: "@weather_notification_settings",
+};
+
+// 天気通知設定の型定義
+export interface WeatherNotificationSettings {
+  enabled: boolean; // 天気連動通知を有効にするか
+  rainMinutes: number; // 雨の時に追加する分数
+  snowMinutes: number; // 雪の時に追加する分数
+  thunderstormMinutes: number; // 雷雨の時に追加する分数
+  cloudyMinutes: number; // 曇りの時に追加する分数
+}
+
+// デフォルト設定
+const DEFAULT_WEATHER_SETTINGS: WeatherNotificationSettings = {
+  enabled: true,
+  rainMinutes: 15,
+  snowMinutes: 15,
+  thunderstormMinutes: 15,
+  cloudyMinutes: 15,
 };
 
 /**
@@ -108,5 +127,49 @@ export async function clearEvents(): Promise<void> {
   } catch (error) {
     console.error("予定削除エラー:", error);
     throw error;
+  }
+}
+
+/**
+ * 天気通知設定を保存
+ */
+export async function saveWeatherNotificationSettings(
+  settings: WeatherNotificationSettings
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(
+      KEYS.WEATHER_NOTIFICATION_SETTINGS,
+      JSON.stringify(settings)
+    );
+    console.log("天気通知設定を保存しました:", settings);
+  } catch (error) {
+    console.error("天気通知設定の保存エラー:", error);
+    throw error;
+  }
+}
+
+/**
+ * 天気通知設定を取得
+ */
+export async function getWeatherNotificationSettings(): Promise<WeatherNotificationSettings> {
+  try {
+    const settingsJson = await AsyncStorage.getItem(
+      KEYS.WEATHER_NOTIFICATION_SETTINGS
+    );
+    if (!settingsJson) {
+      // 設定がない場合はデフォルト設定を返す
+      return DEFAULT_WEATHER_SETTINGS;
+    }
+    const settings = JSON.parse(settingsJson);
+
+    // 古い設定データにcloudyMinutesがない場合はデフォルト値を追加
+    return {
+      ...DEFAULT_WEATHER_SETTINGS,
+      ...settings,
+    };
+  } catch (error) {
+    console.error("天気通知設定の取得エラー:", error);
+    // エラー時もデフォルト設定を返す
+    return DEFAULT_WEATHER_SETTINGS;
   }
 }
