@@ -25,6 +25,7 @@ import {
 } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
+import EditEventModal from "../components/EditEventModal";
 import EventDetailModal from "../components/EventDetailModal";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
@@ -113,7 +114,9 @@ export default function CalendarScreen() {
   // モーダルの表示状態
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
+  const [editingEvent, setEditingEvent] = useState<EventData | null>(null);
 
   // 初回マウント時に保存された予定を読み込む
   useEffect(() => {
@@ -183,6 +186,21 @@ export default function CalendarScreen() {
   // 予定を削除
   const handleDeleteEvent = (eventId: string) => {
     setEvents((prev) => prev.filter((e) => e.id !== eventId));
+  };
+
+  // 予定を更新
+  const handleUpdateEvent = async (updatedEvent: EventData) => {
+    const updatedEvents = events.map((e) => (e.id === updatedEvent.id ? updatedEvent : e));
+    setEvents(updatedEvents);
+    await storageService.saveEvents(updatedEvents);
+    setShowEditModal(false);
+    console.log("予定を更新しました:", updatedEvent.id);
+  };
+
+  // 編集ボタン押下時
+  const handleEditEvent = (event: EventData) => {
+    setEditingEvent(event);
+    setShowEditModal(true);
   };
 
   // Week の日配列（選択日が属する週: 日曜始まり）
@@ -291,6 +309,15 @@ export default function CalendarScreen() {
         event={selectedEvent}
         onClose={() => setShowDetailModal(false)}
         onDelete={handleDeleteEvent}
+        onEdit={handleEditEvent}
+      />
+
+      {/* 予定編集モーダル */}
+      <EditEventModal
+        visible={showEditModal}
+        event={editingEvent}
+        onClose={() => setShowEditModal(false)}
+        onSave={handleUpdateEvent}
       />
     </SafeAreaView>
   );
@@ -510,7 +537,7 @@ function MonthView({
   // マーク付きの日付を準備
   const markedDates: MyMarkedDates = useMemo(() => {
     const marks: MyMarkedDates = {};
-    const today = new Date().toISOString().split("T")[0];
+    const today = new Date().toISOString().split("T")[0]; // ← 修正
     marks[today] = {
       selected: true,
       selectedColor: "#007AFF",
