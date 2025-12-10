@@ -2,13 +2,11 @@
 import {
   addDays,
   format,
-  format as formatDate,
   getDay,
-  parseISO,
-  subWeeks,
+  subWeeks
 } from "date-fns";
 import { ja } from "date-fns/locale";
-import React, { useContext, useMemo, useState, useEffect } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
   Platform,
   ScrollView,
@@ -19,8 +17,8 @@ import {
 } from "react-native";
 import {
   DateData,
-  Calendar as RNCalendar,
   LocaleConfig,
+  Calendar as RNCalendar,
 } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
@@ -82,11 +80,45 @@ LocaleConfig.defaultLocale = "jp";
 // 祝日リストの型定義を追加
 type HolidayList = Record<string, string>;
 
-// 祝日リスト（実際はAPIで取得するなど）
+// 祝日リスト（2025年の日本の祝日）
 const HOLIDAYS: HolidayList = {
   "2025-01-01": "元日",
   "2025-01-13": "成人の日",
-  // ...他の祝日
+  "2025-02-11": "建国記念の日",
+  "2025-02-23": "天皇誕生日",
+  "2025-02-24": "振替休日",
+  "2025-03-20": "春分の日",
+  "2025-04-29": "昭和の日",
+  "2025-05-03": "憲法記念日",
+  "2025-05-04": "みどりの日",
+  "2025-05-05": "こどもの日",
+  "2025-05-06": "振替休日",
+  "2025-07-21": "海の日",
+  "2025-08-11": "山の日",
+  "2025-09-15": "敬老の日",
+  "2025-09-23": "秋分の日",
+  "2025-10-13": "スポーツの日",
+  "2025-11-03": "文化の日",
+  "2025-11-23": "勤労感謝の日",
+  "2025-11-24": "振替休日",
+  // 2026年の祝日
+  "2026-01-01": "元日",
+  "2026-01-12": "成人の日",
+  "2026-02-11": "建国記念の日",
+  "2026-02-23": "天皇誕生日",
+  "2026-03-20": "春分の日",
+  "2026-04-29": "昭和の日",
+  "2026-05-03": "憲法記念日",
+  "2026-05-04": "みどりの日",
+  "2026-05-05": "こどもの日",
+  "2026-05-06": "振替休日",
+  "2026-07-20": "海の日",
+  "2026-08-11": "山の日",
+  "2026-09-21": "敬老の日",
+  "2026-09-22": "秋分の日",
+  "2026-10-12": "スポーツの日",
+  "2026-11-03": "文化の日",
+  "2026-11-23": "勤労感謝の日",
 };
 
 // 日付の色を判定
@@ -375,6 +407,7 @@ function WeekView({
           const has = items[d] && items[d].length > 0;
           const selected = d === selectedDate;
           const dayColor = getDayColor(d, textColor);
+          const isHoliday = HOLIDAYS[d];
 
           return (
             <TouchableOpacity
@@ -385,7 +418,7 @@ function WeekView({
               ]}
               onPress={() => onSelectDate(d)}
             >
-              <Text style={{ color: selected ? "#fff" : dayColor }}>
+              <Text style={{ color: selected ? "#fff" : dayColor, fontWeight: '600' }}>
                 {dayNum}
               </Text>
               <Text
@@ -393,6 +426,18 @@ function WeekView({
               >
                 {dayText}
               </Text>
+              {isHoliday && (
+                <Text
+                  style={{
+                    color: selected ? "#fff" : "#ff4444",
+                    fontSize: 8,
+                    textAlign: "center",
+                    marginTop: 2,
+                  }}
+                >
+                  {isHoliday}
+                </Text>
+              )}
               {has && (
                 <View
                   style={[
@@ -438,9 +483,6 @@ type MyMarkedDates = {
     selectedColor?: string;
     marked?: boolean;
     dotColor?: string;
-    // 祝日用
-    type?: string;
-    text?: string;
   };
 };
 
@@ -458,7 +500,7 @@ function MonthView({
   // マーク付きの日付を準備
   const markedDates: MyMarkedDates = useMemo(() => {
     const marks: MyMarkedDates = {};
-    const today = new Date().toISOString().split("T")[0]; // ← 修正
+    const today = new Date().toISOString().split("T")[0];
     marks[today] = {
       selected: true,
       selectedColor: "#007AFF",
@@ -468,13 +510,6 @@ function MonthView({
         ...(marks[date] || {}),
         marked: true,
         dotColor: "#FF3B30",
-      };
-    });
-    Object.keys(HOLIDAYS).forEach((date) => {
-      marks[date] = {
-        ...(marks[date] || {}),
-        type: "holiday",
-        text: HOLIDAYS[date],
       };
     });
     return marks;
@@ -551,7 +586,7 @@ function MonthView({
           if (!date) return null;
           const isDisabled = state === "disabled";
           const customMarking = marking as MyMarkedDates[string] | undefined;
-          const isHoliday = customMarking?.type === "holiday";
+          const isHoliday = HOLIDAYS[date.dateString]; // 直接HOLIDAYSから取得
           const isSelected = customMarking?.selected;
           const hasEvents = customMarking?.marked;
           const dayNum = new Date(date.timestamp).getDay();
@@ -598,8 +633,10 @@ function MonthView({
                   ]}
                 />
               )}
-              {isHoliday && customMarking?.text && (
-                <Text style={styles.holidayText}>{customMarking.text}</Text>
+              {isHoliday && (
+                <Text style={[styles.holidayText, isSelected && { color: "#fff" }]}>
+                  {isHoliday}
+                </Text>
               )}
             </TouchableOpacity>
           );
