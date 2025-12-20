@@ -78,18 +78,43 @@ export default function SettingsScreen() {
     setGoogleLinked(true);
   };
 
-  // スケジュール済み通知を確認
+  // スケジュール済み通知を確認（現在のユーザーのみ）
   const checkScheduledNotifications = async () => {
     try {
+      // 現在のユーザーの予定を取得
+      const user = await authService.getCurrentUser();
+      if (!user) {
+        Alert.alert("エラー", "ログインしていません");
+        return;
+      }
+      
+      const userEvents = await storageService.getEvents(user.id);
+      
+      // ユーザーの予定に関連する通知IDを収集
+      const userNotificationIds = new Set<string>();
+      userEvents.forEach((event: any) => {
+        if (event.notificationIds?.departure) {
+          userNotificationIds.add(event.notificationIds.departure);
+        }
+        if (event.notificationIds?.preparation) {
+          userNotificationIds.add(event.notificationIds.preparation);
+        }
+      });
+      
       const notifications =
         await Notifications.getAllScheduledNotificationsAsync();
+      
+      // 現在のユーザーの通知のみをフィルタリング
+      const userNotifications = notifications.filter(n => 
+        userNotificationIds.has(n.identifier)
+      );
 
-      if (notifications.length === 0) {
+      if (userNotifications.length === 0) {
         Alert.alert("通知", "スケジュール済みの通知はありません。");
         return;
       }
 
-      const notificationList = notifications
+      const notificationList = userNotifications
         .map((n, index) => {
           const trigger = n.trigger as any;
           let timeString = "不明";
@@ -108,7 +133,7 @@ export default function SettingsScreen() {
         .join("\n\n");
 
       Alert.alert(
-        `スケジュール済み通知 (${notifications.length}件)`,
+        `スケジュール済み通知 (${userNotifications.length}件)`,
         notificationList,
         [
           { text: "キャンセル", style: "cancel" },
@@ -117,19 +142,27 @@ export default function SettingsScreen() {
             style: "destructive",
             onPress: async () => {
               try {
-                await Notifications.cancelAllScheduledNotificationsAsync();
-                console.log("✅ 全ての通知を削除しました");
+                // ユーザーの通知のみを削除
+                for (const notification of userNotifications) {
+                  await Notifications.cancelScheduledNotificationAsync(
+                    notification.identifier
+                  );
+                }
+                console.log("✅ ユーザーの全ての通知を削除しました");
                 
                 // 削除後、通知が本当に削除されたか確認
                 const remainingNotifications = 
                   await Notifications.getAllScheduledNotificationsAsync();
+                const remainingUserNotifications = remainingNotifications.filter(n =>
+                  userNotificationIds.has(n.identifier)
+                );
                 
-                if (remainingNotifications.length === 0) {
+                if (remainingUserNotifications.length === 0) {
                   Alert.alert("完了", "全ての通知を削除しました");
                 } else {
                   Alert.alert(
                     "警告", 
-                    `${remainingNotifications.length}件の通知が削除されませんでした`
+                    `${remainingUserNotifications.length}件の通知が削除されませんでした`
                   );
                 }
               } catch (error) {
@@ -210,6 +243,30 @@ export default function SettingsScreen() {
               </Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity 
+            style={[styles.buttonRow, { marginTop: 12 }]}
+            onPress={async () => {
+              Alert.alert(
+                "ログアウト",
+                "ログアウトしますか？",
+                [
+                  { text: "キャンセル", style: "cancel" },
+                  {
+                    text: "ログアウト",
+                    style: "destructive",
+                    onPress: async () => {
+                      await authService.logout();
+                      // ログアウト後は自動的にログイン画面に遷移
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={[styles.buttonText, { color: "#FF3B30" }]}>
+              ▶ ログアウト
+            </Text>
+          </TouchableOpacity>
         </ShadowView>
 
         {/* プロフィール情報（旧） - 削除予定 */}

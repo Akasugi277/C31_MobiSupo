@@ -1,25 +1,25 @@
 // src/screens/CalendarScreen.tsx
 import {
-    addDays,
-    format,
-    getDay,
-    subWeeks
+  addDays,
+  format,
+  getDay,
+  subWeeks
 } from "date-fns";
 import { ja } from "date-fns/locale";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
-    Alert,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import {
-    DateData,
-    LocaleConfig,
-    Calendar as RNCalendar,
+  DateData,
+  LocaleConfig,
+  Calendar as RNCalendar,
 } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
@@ -27,6 +27,7 @@ import EditEventModal from "../components/EditEventModal";
 import EventDetailModal from "../components/EventDetailModal";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
+import * as authService from "../services/authService";
 import * as notificationService from "../services/notificationService";
 import * as storageService from "../services/storageService";
 
@@ -146,6 +147,9 @@ export default function CalendarScreen() {
   const todayStr = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
+  // 現在のユーザーIDを保持
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
   // 予定データの状態管理
   const [events, setEvents] = useState<EventData[]>([]);
 
@@ -156,25 +160,39 @@ export default function CalendarScreen() {
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventData | null>(null);
 
+  // 初回マウント時に現在のユーザーIDを取得
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const user = await authService.getCurrentUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
+
   // 初回マウント時に保存された予定を読み込む
   useEffect(() => {
-    loadEvents();
-  }, []);
+    if (currentUserId) {
+      loadEvents();
+    }
+  }, [currentUserId]);
 
   // 予定が変更されたら自動保存
   useEffect(() => {
-    if (events.length > 0) {
-      storageService.saveEvents(events);
+    if (currentUserId) {
+      storageService.saveEvents(events, currentUserId);
     }
-  }, [events]);
+  }, [events, currentUserId]);
 
   // 予定を読み込む
   const loadEvents = async () => {
     try {
-      const savedEvents = await storageService.getEvents();
+      if (!currentUserId) return;
+      const savedEvents = await storageService.getEvents(currentUserId);
       if (savedEvents.length > 0) {
         setEvents(savedEvents);
-        console.log("予定を読み込みました:", savedEvents.length, "件");
+        console.log(`予定を読み込みました (userId: ${currentUserId}):`, savedEvents.length, "件");
       }
     } catch (error) {
       console.error("予定読み込みエラー:", error);
@@ -204,8 +222,13 @@ export default function CalendarScreen() {
   }, [events]);
 
   // 予定を保存
-  const handleSaveEvent = (event: EventData) => {
-    setEvents((prev) => [...prev, event]);
+  const handleSaveEvent = async (event: EventData) => {
+    const updatedEvents = [...events, event];
+    setEvents(updatedEvents);
+    // 即座にストレージに保存
+    if (currentUserId) {
+      await storageService.saveEvents(updatedEvents, currentUserId);
+    }
     setShowAddModal(false);
   };
 
@@ -226,17 +249,13 @@ export default function CalendarScreen() {
       
       if (eventToDelete) {
         // 予定に関連する通知IDを削除
-        if (eventToDelete.departureNotificationId) {
-          console.log("🗑️ 出発通知を削除:", eventToDelete.departureNotificationId);
-          await notificationService.cancelNotification(eventToDelete.departureNotificationId);
+        if (eventToDelete.notificationIds?.departure) {
+          console.log("🗑️ 出発通知を削除:", eventToDelete.notificationIds.departure);
+          await notificationService.cancelNotification(eventToDelete.notificationIds.departure);
         }
-        if (eventToDelete.preparationNotificationId) {
-          console.log("🗑️ 準備通知を削除:", eventToDelete.preparationNotificationId);
-          await notificationService.cancelNotification(eventToDelete.preparationNotificationId);
-        }
-        if (eventToDelete.weatherNotificationId) {
-          console.log("🗑️ 天気通知を削除:", eventToDelete.weatherNotificationId);
-          await notificationService.cancelNotification(eventToDelete.weatherNotificationId);
+        if (eventToDelete.notificationIds?.preparation) {
+          console.log("🗑️ 準備通知を削除:", eventToDelete.notificationIds.preparation);
+          await notificationService.cancelNotification(eventToDelete.notificationIds.preparation);
         }
       }
       
@@ -245,7 +264,9 @@ export default function CalendarScreen() {
       setEvents(updatedEvents);
       
       // ストレージに保存
-      await storageService.saveEvents(updatedEvents);
+      if (currentUserId) {
+        await storageService.saveEvents(updatedEvents, currentUserId);
+      }
       
       console.log("✅ 予定と通知を削除しました:", eventId);
     } catch (error) {
@@ -258,7 +279,9 @@ export default function CalendarScreen() {
   const handleUpdateEvent = async (updatedEvent: EventData) => {
     const updatedEvents = events.map((e) => (e.id === updatedEvent.id ? updatedEvent : e));
     setEvents(updatedEvents);
-    await storageService.saveEvents(updatedEvents);
+    if (currentUserId) {
+      await storageService.saveEvents(updatedEvents, currentUserId);
+    }
     setShowEditModal(false);
     console.log("予定を更新しました:", updatedEvent.id);
   };

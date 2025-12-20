@@ -3,7 +3,6 @@ import { createStackNavigator } from '@react-navigation/stack';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useState } from 'react';
 import { Alert, Platform, View } from 'react-native';
-import AdminToggleButton from './components/AdminToggleButton';
 import { ThemeContext, ThemeProvider } from './components/ThemeContext';
 import TabNavigator from './navigation/TabNavigator';
 import AccountSettingsScreen from './screens/AccountSettingsScreen';
@@ -129,8 +128,8 @@ export default function App() {
                                         options={{ title: 'ユーザー管理' }}
                                     />
                                 </Stack.Navigator>
-                                {/* デバッグ用の切り替えボタン */}
-                                <AdminToggleButton onUserChanged={handleUserChanged} />
+                                {/* デバッグ用の切り替えボタン（一時的に無効化） */}
+                                {/* <AdminToggleButton onUserChanged={handleUserChanged} /> */}
                             </>
                         ) : (
                             <Stack.Navigator screenOptions={{ headerShown: false }}>
