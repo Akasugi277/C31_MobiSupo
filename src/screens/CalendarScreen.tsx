@@ -1,24 +1,25 @@
 // src/screens/CalendarScreen.tsx
 import {
-  addDays,
-  format,
-  getDay,
-  subWeeks
+    addDays,
+    format,
+    getDay,
+    subWeeks
 } from "date-fns";
 import { ja } from "date-fns/locale";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import {
-  DateData,
-  LocaleConfig,
-  Calendar as RNCalendar,
+    DateData,
+    LocaleConfig,
+    Calendar as RNCalendar,
 } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
@@ -26,6 +27,7 @@ import EditEventModal from "../components/EditEventModal";
 import EventDetailModal from "../components/EventDetailModal";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
+import * as notificationService from "../services/notificationService";
 import * as storageService from "../services/storageService";
 
 // カレンダーアイテム型定義
@@ -217,8 +219,39 @@ export default function CalendarScreen() {
   };
 
   // 予定を削除
-  const handleDeleteEvent = (eventId: string) => {
-    setEvents((prev) => prev.filter((e) => e.id !== eventId));
+  const handleDeleteEvent = async (eventId: string) => {
+    try {
+      // 削除する予定を取得
+      const eventToDelete = events.find((e) => e.id === eventId);
+      
+      if (eventToDelete) {
+        // 予定に関連する通知IDを削除
+        if (eventToDelete.departureNotificationId) {
+          console.log("🗑️ 出発通知を削除:", eventToDelete.departureNotificationId);
+          await notificationService.cancelNotification(eventToDelete.departureNotificationId);
+        }
+        if (eventToDelete.preparationNotificationId) {
+          console.log("🗑️ 準備通知を削除:", eventToDelete.preparationNotificationId);
+          await notificationService.cancelNotification(eventToDelete.preparationNotificationId);
+        }
+        if (eventToDelete.weatherNotificationId) {
+          console.log("🗑️ 天気通知を削除:", eventToDelete.weatherNotificationId);
+          await notificationService.cancelNotification(eventToDelete.weatherNotificationId);
+        }
+      }
+      
+      // 予定をリストから削除
+      const updatedEvents = events.filter((e) => e.id !== eventId);
+      setEvents(updatedEvents);
+      
+      // ストレージに保存
+      await storageService.saveEvents(updatedEvents);
+      
+      console.log("✅ 予定と通知を削除しました:", eventId);
+    } catch (error) {
+      console.error("❌ 予定削除エラー:", error);
+      Alert.alert("エラー", "予定の削除に失敗しました");
+    }
   };
 
   // 予定を更新
