@@ -1,37 +1,39 @@
 // src/screens/HomeScreen.tsx
-import React, { useContext, useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { EventData } from "../components/AddEventModal";
 import GoogleCalendarAuth from "../components/GoogleCalendarAuth";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
+import * as authService from "../services/authService";
 import {
-  CalendarEvent,
-  fetchCalendarEvents,
+    CalendarEvent,
+    fetchCalendarEvents,
 } from "../services/calendarService";
 import {
-  clearGoogleCalendarToken,
-  getGoogleCalendarToken,
-  isGoogleCalendarAuthenticated,
-  saveGoogleCalendarToken,
-  getEvents,
+    clearGoogleCalendarToken,
+    getEvents,
+    getGoogleCalendarToken,
+    isGoogleCalendarAuthenticated,
+    saveGoogleCalendarToken,
 } from "../services/storageService";
-import { EventData } from "../components/AddEventModal";
 import {
-  AddressData,
-  getCurrentAddress,
-  getCurrentWeather,
-  WeatherData,
+    AddressData,
+    getCurrentAddress,
+    getCurrentWeather,
+    WeatherData,
 } from "../services/weatherService";
 
 export default function HomeScreen() {
@@ -92,9 +94,17 @@ export default function HomeScreen() {
   // ローカル予定を取得する関数
   const fetchLocalEvents = async () => {
     try {
-      const events = await getEvents();
+      // 現在のユーザーIDを取得
+      const user = await authService.getCurrentUser();
+      if (!user) {
+        console.log("ログインしていません");
+        setLocalEvents([]);
+        return;
+      }
+      
+      const events = await getEvents(user.id);
       setLocalEvents(events);
-      console.log(`ローカルから${events.length}件の予定を取得しました`);
+      console.log(`ローカルから${events.length}件の予定を取得しました (userId: ${user.id})`);
     } catch (error) {
       console.error("ローカル予定の取得に失敗:", error);
     }
@@ -110,6 +120,13 @@ export default function HomeScreen() {
 
     initialize();
   }, []);
+
+  // 画面がフォーカスされたときにローカル予定を再読み込み
+  useFocusEffect(
+    useCallback(() => {
+      fetchLocalEvents();
+    }, [])
+  );
 
   // スワイプで更新する処理
   const onRefresh = async () => {

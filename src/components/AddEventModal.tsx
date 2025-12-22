@@ -4,15 +4,15 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import React, { useContext, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from "react-native";
 import * as notificationService from "../services/notificationService";
 import * as routeService from "../services/routeService";
@@ -25,6 +25,7 @@ interface AddEventModalProps {
   selectedDate: string; // YYYY-MM-DD形式
   onClose: () => void;
   onSave: (event: EventData) => void;
+  editingEvent?: EventData | null; // 編集時に渡されるイベント
 }
 
 export interface EventData {
@@ -52,6 +53,7 @@ export default function AddEventModal({
   selectedDate,
   onClose,
   onSave,
+  editingEvent,
 }: AddEventModalProps) {
   const { theme } = useContext(ThemeContext);
   const bgColor = theme === "light" ? "#fff" : "#333";
@@ -89,16 +91,34 @@ export default function AddEventModal({
     undefined
   );
 
-  // モーダルが開かれたときに時刻を初期化
+  // モーダルが開かれたときに時刻を初期化または編集データを設定
   useEffect(() => {
     if (visible) {
-      const now = new Date();
-      setStartTime(now);
-      const later = new Date();
-      later.setHours(later.getHours() + 1);
-      setEndTime(later);
+      if (editingEvent) {
+        // 編集モード: 既存のイベントデータをセット
+        setTitle(editingEvent.title);
+        setLocation(editingEvent.location || "");
+        setStartTime(editingEvent.startTime);
+        setEndTime(editingEvent.endTime);
+        setTravelTime(editingEvent.travelTime?.toString() || "");
+        setRepeat(editingEvent.repeat || "none");
+        setNotification(editingEvent.notification);
+      } else {
+        // 新規作成モード: デフォルト値をセット
+        setTitle("");
+        setLocation("");
+        setDescription("");
+        const now = new Date();
+        setStartTime(now);
+        const later = new Date();
+        later.setHours(later.getHours() + 1);
+        setEndTime(later);
+        setTravelTime("");
+        setRepeat("none");
+        setNotification(true);
+      }
     }
-  }, [visible]);
+  }, [visible, editingEvent]);
 
   // 複数のルートを計算して表示
   const calculateRoute = async () => {
@@ -302,7 +322,7 @@ export default function AddEventModal({
 
       // イベントデータを作成
       const eventData: EventData = {
-        id: Date.now().toString(),
+        id: editingEvent?.id || Date.now().toString(), // 編集時は既存のIDを保持
         title,
         location: location.trim() || undefined,
         startTime,
@@ -318,7 +338,7 @@ export default function AddEventModal({
       resetForm();
 
       // 成功メッセージに通知情報を含める
-      let successMessage = "✅ 予定を作成しました";
+      let successMessage = editingEvent ? "✅ 予定を更新しました" : "✅ 予定を作成しました";
       if (notification && notificationIds && notificationTime) {
         const notificationDate = notificationTime.toLocaleDateString("ja-JP", {
           month: "2-digit",
@@ -345,7 +365,7 @@ export default function AddEventModal({
       } else if (notification && !notificationIds) {
         successMessage += "\n\n⚠️ 通知時刻が過去のため、通知はスケジュールされませんでした。";
       }
-      Alert.alert("📝 予定作成", successMessage);
+      Alert.alert(editingEvent ? "📝 予定更新" : "📝 予定作成", successMessage);
     } catch (error) {
       console.error("予定保存エラー:", error);
       Alert.alert("エラー", "予定の保存に失敗しました");
@@ -394,7 +414,9 @@ export default function AddEventModal({
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: bgColor }]}>
           <ScrollView>
-            <Text style={[styles.modalTitle, { color: textColor }]}>新規予定作成</Text>
+            <Text style={[styles.modalTitle, { color: textColor }]}>
+              {editingEvent ? "予定を編集" : "新規予定作成"}
+            </Text>
 
             {/* タイトル入力 */}
             <Text style={[styles.label, { color: textColor }]}>タイトル *</Text>
@@ -711,7 +733,7 @@ export default function AddEventModal({
               <Text style={styles.buttonText}>キャンセル</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-              <Text style={styles.buttonText}>保存</Text>
+              <Text style={styles.buttonText}>{editingEvent ? "更新" : "保存"}</Text>
             </TouchableOpacity>
           </View>
         </View>

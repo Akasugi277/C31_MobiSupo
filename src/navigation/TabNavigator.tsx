@@ -1,6 +1,7 @@
 import { BottomTabBar, BottomTabBarProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import TabIcon from '../components/TabIcons';
 import CalendarScreen from '../screens/CalendarScreen';
 import HomeScreen from '../screens/HomeScreen';
 import SettingsScreen from '../screens/SettingsScreen';
@@ -23,9 +24,36 @@ export default function TabNavigator() {
             screenOptions={{ headerShown: false }}
             tabBar={props => <CustomTabBar {...props} />}
         >
-            <Tab.Screen name="Home" component={HomeScreen} options={{ tabBarLabel: 'ホーム' }} />
-            <Tab.Screen name="Calendar" component={CalendarScreen} options={{ tabBarLabel: 'カレンダー' }} />
-            <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: '設定／プロフィール' }} />
+            <Tab.Screen 
+                name="Home" 
+                component={HomeScreen} 
+                options={{ 
+                    tabBarLabel: 'ホーム',
+                    tabBarIcon: ({ focused, color, size }) => (
+                        <TabIcon focused={focused} color={color} size={size} name="home" />
+                    )
+                }} 
+            />
+            <Tab.Screen 
+                name="Calendar" 
+                component={CalendarScreen} 
+                options={{ 
+                    tabBarLabel: 'カレンダー',
+                    tabBarIcon: ({ focused, color, size }) => (
+                        <TabIcon focused={focused} color={color} size={size} name="calendar" />
+                    )
+                }} 
+            />
+            <Tab.Screen 
+                name="Settings" 
+                component={SettingsScreen} 
+                options={{ 
+                    tabBarLabel: '設定／プロフィール',
+                    tabBarIcon: ({ focused, color, size }) => (
+                        <TabIcon focused={focused} color={color} size={size} name="settings" />
+                    )
+                }} 
+            />
         </Tab.Navigator>
     );
 }

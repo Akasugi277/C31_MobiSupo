@@ -78,8 +78,10 @@ export async function isGoogleCalendarAuthenticated(): Promise<boolean> {
 
 /**
  * 予定を保存
+ * @param events 保存する予定の配列
+ * @param userId ユーザーID（指定しない場合は全ユーザー共通）
  */
-export async function saveEvents(events: any[]): Promise<void> {
+export async function saveEvents(events: any[], userId?: string): Promise<void> {
   try {
     // DateオブジェクトをJSON化できるように変換
     const eventsToSave = events.map(event => ({
@@ -87,8 +89,9 @@ export async function saveEvents(events: any[]): Promise<void> {
       startTime: event.startTime.toISOString(),
       endTime: event.endTime.toISOString(),
     }));
-    await AsyncStorage.setItem(KEYS.EVENTS, JSON.stringify(eventsToSave));
-    console.log("予定を保存しました:", eventsToSave.length, "件");
+    const storageKey = userId ? `${KEYS.EVENTS}_${userId}` : KEYS.EVENTS;
+    await AsyncStorage.setItem(storageKey, JSON.stringify(eventsToSave));
+    console.log(`予定を保存しました (${userId || 'global'}):`, eventsToSave.length, "件");
   } catch (error) {
     console.error("予定保存エラー:", error);
     throw error;
@@ -97,10 +100,12 @@ export async function saveEvents(events: any[]): Promise<void> {
 
 /**
  * 予定を取得
+ * @param userId ユーザーID（指定しない場合は全ユーザー共通）
  */
-export async function getEvents(): Promise<any[]> {
+export async function getEvents(userId?: string): Promise<any[]> {
   try {
-    const eventsJson = await AsyncStorage.getItem(KEYS.EVENTS);
+    const storageKey = userId ? `${KEYS.EVENTS}_${userId}` : KEYS.EVENTS;
+    const eventsJson = await AsyncStorage.getItem(storageKey);
     if (!eventsJson) {
       return [];
     }
@@ -119,11 +124,13 @@ export async function getEvents(): Promise<any[]> {
 
 /**
  * すべての予定を削除
+ * @param userId ユーザーID（指定しない場合は全ユーザー共通）
  */
-export async function clearEvents(): Promise<void> {
+export async function clearEvents(userId?: string): Promise<void> {
   try {
-    await AsyncStorage.removeItem(KEYS.EVENTS);
-    console.log("すべての予定を削除しました");
+    const storageKey = userId ? `${KEYS.EVENTS}_${userId}` : KEYS.EVENTS;
+    await AsyncStorage.removeItem(storageKey);
+    console.log(`すべての予定を削除しました (${userId || 'global'})`);
   } catch (error) {
     console.error("予定削除エラー:", error);
     throw error;

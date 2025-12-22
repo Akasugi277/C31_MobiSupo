@@ -239,14 +239,37 @@ export async function scheduleEventNotifications(params: {
  * 通知をキャンセル
  */
 export async function cancelNotification(notificationId: string): Promise<void> {
-  await Notifications.cancelScheduledNotificationAsync(notificationId);
+  try {
+    console.log("🗑️ 通知削除:", notificationId);
+    await Notifications.cancelScheduledNotificationAsync(notificationId);
+    console.log("✅ 通知削除完了:", notificationId);
+  } catch (error) {
+    console.error("❌ 通知削除エラー:", notificationId, error);
+    throw error;
+  }
 }
 
 /**
  * 全ての通知をキャンセル
  */
 export async function cancelAllNotifications(): Promise<void> {
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  try {
+    const notifications = await Notifications.getAllScheduledNotificationsAsync();
+    console.log("🗑️ 全通知削除開始:", notifications.length, "件");
+    
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    
+    // 削除確認
+    const remainingNotifications = await Notifications.getAllScheduledNotificationsAsync();
+    console.log("✅ 全通知削除完了。残り:", remainingNotifications.length, "件");
+    
+    if (remainingNotifications.length > 0) {
+      console.warn("⚠️ 削除されなかった通知:", remainingNotifications);
+    }
+  } catch (error) {
+    console.error("❌ 全通知削除エラー:", error);
+    throw error;
+  }
 }
 
 /**

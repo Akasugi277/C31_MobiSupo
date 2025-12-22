@@ -1,27 +1,32 @@
 // src/screens/SettingsScreen.tsx
+import { useNavigation } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import React, { useContext, useEffect, useState } from "react";
 import {
-  Alert,
-  Image,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
+import * as authService from "../services/authService";
 import * as storageService from "../services/storageService";
+import { User, UserClass } from "../types/user";
 
 export default function SettingsScreen() {
+  const navigation = useNavigation<any>();
   const { theme, toggleTheme } = useContext(ThemeContext);
   const textColor = theme === "light" ? "#000" : "#fff";
   const bgColor = theme === "light" ? "#fff" : "#333";
+  
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // ダミーユーザー
   const [googleLinked, setGoogleLinked] = useState(false);
@@ -44,7 +49,14 @@ export default function SettingsScreen() {
       setWeatherSettings(settings);
     };
     loadSettings();
+    loadCurrentUser();
   }, []);
+
+  // 現在のユーザーを読み込み
+  const loadCurrentUser = async () => {
+    const user = await authService.getCurrentUser();
+    setCurrentUser(user);
+  };
 
   // 天気通知設定を保存
   const saveWeatherSettings = async (
@@ -66,18 +78,43 @@ export default function SettingsScreen() {
     setGoogleLinked(true);
   };
 
-  // スケジュール済み通知を確認
+  // スケジュール済み通知を確認（現在のユーザーのみ）
   const checkScheduledNotifications = async () => {
     try {
+      // 現在のユーザーの予定を取得
+      const user = await authService.getCurrentUser();
+      if (!user) {
+        Alert.alert("エラー", "ログインしていません");
+        return;
+      }
+      
+      const userEvents = await storageService.getEvents(user.id);
+      
+      // ユーザーの予定に関連する通知IDを収集
+      const userNotificationIds = new Set<string>();
+      userEvents.forEach((event: any) => {
+        if (event.notificationIds?.departure) {
+          userNotificationIds.add(event.notificationIds.departure);
+        }
+        if (event.notificationIds?.preparation) {
+          userNotificationIds.add(event.notificationIds.preparation);
+        }
+      });
+      
       const notifications =
         await Notifications.getAllScheduledNotificationsAsync();
+      
+      // 現在のユーザーの通知のみをフィルタリング
+      const userNotifications = notifications.filter(n => 
+        userNotificationIds.has(n.identifier)
+      );
 
-      if (notifications.length === 0) {
+      if (userNotifications.length === 0) {
         Alert.alert("通知", "スケジュール済みの通知はありません。");
         return;
       }
 
-      const notificationList = notifications
+      const notificationList = userNotifications
         .map((n, index) => {
           const trigger = n.trigger as any;
           let timeString = "不明";
@@ -96,7 +133,7 @@ export default function SettingsScreen() {
         .join("\n\n");
 
       Alert.alert(
-        `スケジュール済み通知 (${notifications.length}件)`,
+        `スケジュール済み通知 (${userNotifications.length}件)`,
         notificationList,
         [
           { text: "キャンセル", style: "cancel" },
@@ -104,8 +141,34 @@ export default function SettingsScreen() {
             text: "全て削除",
             style: "destructive",
             onPress: async () => {
-              await Notifications.cancelAllScheduledNotificationsAsync();
-              Alert.alert("完了", "全ての通知を削除しました");
+              try {
+                // ユーザーの通知のみを削除
+                for (const notification of userNotifications) {
+                  await Notifications.cancelScheduledNotificationAsync(
+                    notification.identifier
+                  );
+                }
+                console.log("✅ ユーザーの全ての通知を削除しました");
+                
+                // 削除後、通知が本当に削除されたか確認
+                const remainingNotifications = 
+                  await Notifications.getAllScheduledNotificationsAsync();
+                const remainingUserNotifications = remainingNotifications.filter(n =>
+                  userNotificationIds.has(n.identifier)
+                );
+                
+                if (remainingUserNotifications.length === 0) {
+                  Alert.alert("完了", "全ての通知を削除しました");
+                } else {
+                  Alert.alert(
+                    "警告", 
+                    `${remainingUserNotifications.length}件の通知が削除されませんでした`
+                  );
+                }
+              } catch (error) {
+                console.error("通知削除エラー:", error);
+                Alert.alert("エラー", "通知の削除に失敗しました");
+              }
             },
           },
         ]
@@ -127,8 +190,87 @@ export default function SettingsScreen() {
         style={[styles.screen, { backgroundColor: bgColor }]}
         contentContainerStyle={styles.container}
       >
-        {/* プロフィール情報 */}
+        {/* ユーザー情報セクション */}
         <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
+          <Text style={[styles.sectionTitle, { color: textColor }]}>
+            ユーザー情報
+          </Text>
+          {currentUser && (
+            <>
+              <View style={styles.userInfoRow}>
+                <Text style={[styles.label, { color: textColor }]}>
+                  表示名: {currentUser.displayName}
+                </Text>
+              </View>
+              <View style={styles.userInfoRow}>
+                <Text style={[styles.label, { color: textColor }]}>
+                  ユーザー名: @{currentUser.username}
+                </Text>
+              </View>
+              <View style={styles.userInfoRow}>
+                <Text style={[styles.label, { color: textColor }]}>
+                  Email: {currentUser.email}
+                </Text>
+              </View>
+              <View style={styles.userInfoRow}>
+                <Text style={[styles.label, { color: textColor }]}>
+                  クラス: {
+                    currentUser.userClass === UserClass.ADMIN
+                      ? "管理者"
+                      : currentUser.userClass === UserClass.USER
+                      ? "ユーザー"
+                      : "未登録"
+                  }
+                </Text>
+              </View>
+            </>
+          )}
+          <TouchableOpacity 
+            style={styles.buttonRow}
+            onPress={() => navigation.navigate("AccountSettings")}
+          >
+            <Text style={[styles.buttonText, { color: textColor }]}>
+              ▶ アカウント設定
+            </Text>
+          </TouchableOpacity>
+          {currentUser && currentUser.userClass === UserClass.ADMIN && (
+            <TouchableOpacity 
+              style={styles.buttonRow}
+              onPress={() => navigation.navigate("UserManagement")}
+            >
+              <Text style={[styles.buttonText, { color: "#FF3B30" }]}>
+                ▶ ユーザー管理（管理者専用）
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity 
+            style={[styles.buttonRow, { marginTop: 12 }]}
+            onPress={async () => {
+              Alert.alert(
+                "ログアウト",
+                "ログアウトしますか？",
+                [
+                  { text: "キャンセル", style: "cancel" },
+                  {
+                    text: "ログアウト",
+                    style: "destructive",
+                    onPress: async () => {
+                      await authService.logout();
+                      // ログアウト後は自動的にログイン画面に遷移
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={[styles.buttonText, { color: "#FF3B30" }]}>
+              ▶ ログアウト
+            </Text>
+          </TouchableOpacity>
+        </ShadowView>
+
+        {/* プロフィール情報（旧） - 削除予定 */}
+        {/* <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
           <View style={styles.avatarRow}>
             <Image
               source={{ uri: "https://i.pravatar.cc/150?img=3" }}
@@ -163,10 +305,22 @@ export default function SettingsScreen() {
               ▶ アプリの設定
             </Text>
           </TouchableOpacity>
+        </ShadowView> */}
+
+        {/* カレンダー連携セクション */}
+        <Text style={[styles.sectionTitle, { color: textColor }]}>
+          カレンダー連携
+        </Text>
+        <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
+          <TouchableOpacity style={styles.buttonRow}>
+            <Text style={[styles.buttonText, { color: textColor }]}>
+              ▶ Apple/Googleカレンダー連携
+            </Text>
+          </TouchableOpacity>
         </ShadowView>
 
-        {/* アカウント設定 */}
-        <Text style={[styles.sectionTitle, { color: textColor }]}>
+        {/* 旧アカウント設定セクション（コメントアウト） */}
+        {/* <Text style={[styles.sectionTitle, { color: textColor }]}>
           アカウント設定
         </Text>
         <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
@@ -200,10 +354,10 @@ export default function SettingsScreen() {
               ログアウトする
             </Text>
           </TouchableOpacity>
-        </ShadowView>
+        </ShadowView> */}
 
-        {/* カレンダー連携 */}
-        <Text style={[styles.sectionTitle, { color: textColor }]}>
+        {/* カレンダー連携（旧） */}
+        {/* <Text style={[styles.sectionTitle, { color: textColor }]}>
           カレンダー連携
         </Text>
         <ShadowView style={[styles.section, { backgroundColor: bgColor }]}>
@@ -228,7 +382,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             )}
           </View>
-        </ShadowView>
+        </ShadowView> */}
 
         {/* アプリの設定 */}
         <Text style={[styles.sectionTitle, { color: textColor }]}>
@@ -444,6 +598,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
+  },
+  userInfoRow: {
+    marginBottom: 8,
   },
   avatarRow: {
     alignItems: "center",
