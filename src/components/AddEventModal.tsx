@@ -43,6 +43,8 @@ export interface EventData {
     departure: string;
     preparation: string;
   };
+  routes?: routeService.RouteInfo[]; // 複数のルート情報
+  selectedRouteIndex?: number; // 選択されたルートのインデックス
 }
 
 export default function AddEventModal({
@@ -68,11 +70,14 @@ export default function AddEventModal({
   const [travelTime, setTravelTime] = useState("");
   const [repeat, setRepeat] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [notification, setNotification] = useState(true);
+  const [notificationMinutesBefore, setNotificationMinutesBefore] = useState(15); // デフォルト15分前
 
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
 
   // ルート計算の状態
   const [calculating, setCalculating] = useState(false);
