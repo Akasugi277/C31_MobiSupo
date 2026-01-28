@@ -140,6 +140,29 @@ export async function geocodeAddress(address: string): Promise<LocationCoords> {
 }
 
 /**
+ * 座標から住所を取得（Google Geocoding API 逆ジオコーディング）
+ */
+export async function reverseGeocode(coords: LocationCoords): Promise<string> {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${coords.latitude},${coords.longitude}&key=${API_KEYS.GOOGLE_MAPS}&language=ja`;
+    const response = await axios.get(url);
+
+    if (response.data.status !== "OK") {
+      throw new Error(`逆ジオコーディング失敗: ${response.data.status}`);
+    }
+
+    if (response.data.results && response.data.results.length > 0) {
+      return response.data.results[0].formatted_address;
+    }
+
+    throw new Error("住所が見つかりませんでした");
+  } catch (error: any) {
+    console.error("逆ジオコーディングエラー:", error.message);
+    throw error;
+  }
+}
+
+/**
  * 座標から最寄り駅を取得（Google Places API）
  */
 async function getNearestStationFromCoords(coords: LocationCoords): Promise<string> {

@@ -1,18 +1,29 @@
 {
   "expo": {
     "name": "C31_MobiSupo",
-    "slug": "C31_MobiSupo",
+    "slug": "mobisupo",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yamadai.c31mobisupo",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "現在地の取得とルート計算のために位置情報を使用します",
+        "NSLocationAlwaysUsageDescription": "現在地の取得とルート計算のために位置情報を使用します"
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./src/assets/KosmosApp-icon.png",
+        "foregroundImage": "./public/KosmosApp-icon.png",
         "backgroundColor": "#ffffff"
       }
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "ed968e74-7282-4e76-9ad8-d7903577e228"
+      }
+    },
+    "owner": "yamadai"
   }
 }

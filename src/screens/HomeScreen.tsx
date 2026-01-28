@@ -1,39 +1,42 @@
 // src/screens/HomeScreen.tsx
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useContext, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { Picker } from "@react-native-picker/picker";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { EventData } from "../components/AddEventModal";
+import AddEventModal, { EventData } from "../components/AddEventModal";
 import GoogleCalendarAuth from "../components/GoogleCalendarAuth";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
 import * as authService from "../services/authService";
 import {
-    CalendarEvent,
-    fetchCalendarEvents,
+  CalendarEvent,
+  fetchCalendarEvents,
 } from "../services/calendarService";
 import {
-    clearGoogleCalendarToken,
-    getEvents,
-    getGoogleCalendarToken,
-    isGoogleCalendarAuthenticated,
-    saveGoogleCalendarToken,
+  clearGoogleCalendarToken,
+  getEvents,
+  getGoogleCalendarToken,
+  isGoogleCalendarAuthenticated,
+  saveEvents,
+  saveGoogleCalendarToken,
 } from "../services/storageService";
 import {
-    AddressData,
-    getCurrentAddress,
-    getCurrentWeather,
-    WeatherData,
+  AddressData,
+  getCurrentAddress,
+  getCurrentWeather,
+  WeatherData,
 } from "../services/weatherService";
 
 export default function HomeScreen() {
@@ -80,7 +83,9 @@ export default function HomeScreen() {
         if (token) {
           const events = await fetchCalendarEvents(token, 20);
           setCalendarEvents(events);
-          console.log(`Google Calendarから${events.length}件の予定を取得しました`);
+          console.log(
+            `Google Calendarから${events.length}件の予定を取得しました`,
+          );
         }
       }
     } catch (error) {
@@ -101,10 +106,12 @@ export default function HomeScreen() {
         setLocalEvents([]);
         return;
       }
-      
+
       const events = await getEvents(user.id);
       setLocalEvents(events);
-      console.log(`ローカルから${events.length}件の予定を取得しました (userId: ${user.id})`);
+      console.log(
+        `ローカルから${events.length}件の予定を取得しました (userId: ${user.id})`,
+      );
     } catch (error) {
       console.error("ローカル予定の取得に失敗:", error);
     }
@@ -114,7 +121,11 @@ export default function HomeScreen() {
   useEffect(() => {
     const initialize = async () => {
       setLoading(true);
-      await Promise.all([fetchWeatherAndAddress(), fetchCalendarData(), fetchLocalEvents()]);
+      await Promise.all([
+        fetchWeatherAndAddress(),
+        fetchCalendarData(),
+        fetchLocalEvents(),
+      ]);
       setLoading(false);
     };
 
@@ -125,13 +136,17 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchLocalEvents();
-    }, [])
+    }, []),
   );
 
   // スワイプで更新する処理
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchWeatherAndAddress(), fetchCalendarData(), fetchLocalEvents()]);
+    await Promise.all([
+      fetchWeatherAndAddress(),
+      fetchCalendarData(),
+      fetchLocalEvents(),
+    ]);
     setRefreshing(false);
   };
 
@@ -161,7 +176,7 @@ export default function HomeScreen() {
             Alert.alert("成功", "Google Calendarとの連携を解除しました");
           },
         },
-      ]
+      ],
     );
   };
 
@@ -229,6 +244,143 @@ export default function HomeScreen() {
   const todayLocalEvents = getTodayLocalEvents();
   const tomorrowLocalEvents = getTomorrowLocalEvents();
 
+  // カウントダウン用: 現在時刻を毎分更新
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 予定ずらしモーダル関連
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [shiftMinutes, setShiftMinutes] = useState(15);
+  const [fixEndTime, setFixEndTime] = useState(false);
+
+  // 予定編集モーダル関連
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<EventData | null>(null);
+
+  // 次の予定までのカウントダウンテキストを計算（予定オブジェクトも返す）
+  const countdownInfo = useMemo(() => {
+    // ローカル予定とGoogle Calendar予定の両方から、現在時刻より後の最も近い予定を探す
+    let nextDepartureTime: Date | null = null;
+    let nextEventTitle = "";
+    let nextEvent: EventData | null = null;
+    let isLocalEvent = false;
+
+    // ローカル予定
+    for (const event of localEvents) {
+      const departureTime = new Date(event.startTime);
+      if (event.travelTime && event.travelTime > 0) {
+        departureTime.setMinutes(departureTime.getMinutes() - event.travelTime);
+      }
+      if (departureTime > now) {
+        if (!nextDepartureTime || departureTime < nextDepartureTime) {
+          nextDepartureTime = departureTime;
+          nextEventTitle = event.title;
+          nextEvent = event;
+          isLocalEvent = true;
+        }
+      }
+    }
+
+    // Google Calendar予定
+    for (const event of calendarEvents) {
+      const eventStart = new Date(event.start);
+      if (eventStart > now) {
+        if (!nextDepartureTime || eventStart < nextDepartureTime) {
+          nextDepartureTime = eventStart;
+          nextEventTitle = event.title;
+          nextEvent = null; // Google Calendarの予定はずらせない
+          isLocalEvent = false;
+        }
+      }
+    }
+
+    if (!nextDepartureTime) {
+      return null; // 今後の予定なし
+    }
+
+    const diffMs = nextDepartureTime.getTime() - now.getTime();
+    const diffMin = Math.floor(diffMs / 60_000);
+
+    let timeText: string;
+    if (diffMin < 60) {
+      timeText = `${diffMin}分`;
+    } else {
+      const hours = Math.floor(diffMin / 60);
+      const mins = diffMin % 60;
+      timeText = mins === 0 ? `${hours}時間` : `${hours}時間${mins}分`;
+    }
+
+    return { time: timeText, title: nextEventTitle, event: nextEvent, isLocalEvent };
+  }, [now, localEvents, calendarEvents]);
+
+  // 予定をずらす処理
+  const handleShiftEvent = async () => {
+    if (!countdownInfo?.event) return;
+
+    const event = countdownInfo.event;
+    const user = await authService.getCurrentUser();
+    if (!user) return;
+
+    // 予定の開始・終了時刻をずらす
+    const newStartTime = new Date(event.startTime);
+    newStartTime.setMinutes(newStartTime.getMinutes() + shiftMinutes);
+
+    let newEndTime: Date;
+    if (fixEndTime) {
+      // 終了時刻は固定
+      newEndTime = new Date(event.endTime);
+    } else {
+      // 終了時刻もずらす
+      newEndTime = new Date(event.endTime);
+      newEndTime.setMinutes(newEndTime.getMinutes() + shiftMinutes);
+    }
+
+    // イベントを更新
+    const updatedEvent: EventData = {
+      ...event,
+      startTime: newStartTime,
+      endTime: newEndTime,
+    };
+
+    // ローカル予定を更新
+    const updatedEvents = localEvents.map((e) =>
+      e.id === event.id ? updatedEvent : e
+    );
+    await saveEvents(updatedEvents, user.id);
+    setLocalEvents(updatedEvents);
+
+    setShowShiftModal(false);
+    Alert.alert(
+      "予定をずらしました",
+      `${event.title}を${shiftMinutes}分後ろにずらしました`
+    );
+  };
+
+  // 予定を編集モーダルで開く
+  const handleOpenEditModal = () => {
+    if (countdownInfo?.event) {
+      setEditingEvent(countdownInfo.event);
+      setShowEditModal(true);
+    }
+  };
+
+  // 予定編集後の保存処理
+  const handleSaveEditedEvent = async (updatedEvent: EventData) => {
+    const user = await authService.getCurrentUser();
+    if (!user) return;
+
+    const updatedEvents = localEvents.map((e) =>
+      e.id === updatedEvent.id ? updatedEvent : e
+    );
+    await saveEvents(updatedEvents, user.id);
+    setLocalEvents(updatedEvents);
+    setShowEditModal(false);
+    setEditingEvent(null);
+  };
+
   return (
     <SafeAreaView
       style={[styles.safe, { backgroundColor: bgColor }]}
@@ -288,12 +440,37 @@ export default function HomeScreen() {
         </ShadowView>
         {/* 出発カウントダウン */}
         <ShadowView style={[styles.countdownBox, { backgroundColor: bgColor }]}>
-          <Text style={[styles.countdownLabel, { color: textColor }]}>
-            次の出発まで: <Text style={styles.countdownTime}>13分</Text>
-          </Text>
-          <TouchableOpacity style={styles.departButton}>
-            <Text style={styles.departButtonText}>今すぐ出発</Text>
-          </TouchableOpacity>
+          {countdownInfo ? (
+            <>
+              <Text style={[styles.countdownLabel, { color: textColor }]}>
+                次の予定まで: <Text style={styles.countdownTime}>{countdownInfo.time}</Text>
+              </Text>
+              <Text style={[{ color: textColor, fontSize: 13, marginTop: 2 }]}>
+                {countdownInfo.title}
+              </Text>
+              {/* ローカル予定の場合のみボタンを表示 */}
+              {countdownInfo.isLocalEvent && countdownInfo.event && (
+                <View style={styles.countdownButtons}>
+                  <TouchableOpacity
+                    style={[styles.shiftButton, { backgroundColor: "#ff9500" }]}
+                    onPress={() => setShowShiftModal(true)}
+                  >
+                    <Text style={styles.shiftButtonText}>予定をずらす</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.editButton, { backgroundColor: "#007aff" }]}
+                    onPress={handleOpenEditModal}
+                  >
+                    <Text style={styles.editButtonText}>編集</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={[styles.countdownLabel, { color: textColor }]}>
+              今後の予定はありません
+            </Text>
+          )}
         </ShadowView>
         {/* 今日の予定 */}
         <View style={styles.section}>
@@ -303,47 +480,47 @@ export default function HomeScreen() {
             </Text>
           </View>
           {/* Google Calendarの予定 */}
-          {todayEvents.length > 0 && todayEvents.map((event) => (
-            <ShadowView
-              key={`gcal-${event.id}`}
-              style={[styles.itemBox, { backgroundColor: bgColor }]}
-            >
-              <Text style={[styles.itemTime, { color: textColor }]}>
-                ▶ {formatEventTime(event.start)} {event.title}
-              </Text>
-              {event.location && (
-                <Text style={[styles.itemDetail, { color: textColor }]}>
-                  └ 場所: {event.location}
+          {todayEvents.length > 0 &&
+            todayEvents.map((event) => (
+              <ShadowView
+                key={`gcal-${event.id}`}
+                style={[styles.itemBox, { backgroundColor: bgColor }]}
+              >
+                <Text style={[styles.itemTime, { color: textColor }]}>
+                  ▶ {formatEventTime(event.start)} {event.title}
                 </Text>
-              )}
-              {event.description && (
-                <Text style={[styles.itemDetail, { color: textColor }]}>
-                  └ {event.description}
-                </Text>
-              )}
-            </ShadowView>
-          ))}
+                {event.location && (
+                  <Text style={[styles.itemDetail, { color: textColor }]}>
+                    └ 場所: {event.location}
+                  </Text>
+                )}
+                {event.description && (
+                  <Text style={[styles.itemDetail, { color: textColor }]}>
+                    └ {event.description}
+                  </Text>
+                )}
+              </ShadowView>
+            ))}
           {/* ローカル予定 */}
-          {todayLocalEvents.length > 0 && todayLocalEvents.map((event) => (
-            <ShadowView
-              key={`local-${event.id}`}
-              style={[styles.itemBox, { backgroundColor: bgColor }]}
-            >
-              <Text style={[styles.itemTime, { color: textColor }]}>
-                ▶ {formatEventTime(event.startTime)} {event.title}
-              </Text>
-              {event.location && (
-                <Text style={[styles.itemDetail, { color: textColor }]}>
-                  └ 場所: {event.location}
+          {todayLocalEvents.length > 0 &&
+            todayLocalEvents.map((event) => (
+              <ShadowView
+                key={`local-${event.id}`}
+                style={[styles.itemBox, { backgroundColor: bgColor }]}
+              >
+                <Text style={[styles.itemTime, { color: textColor }]}>
+                  ▶ {formatEventTime(event.startTime)} {event.title}
                 </Text>
-              )}
-            </ShadowView>
-          ))}
+                {event.location && (
+                  <Text style={[styles.itemDetail, { color: textColor }]}>
+                    └ 場所: {event.location}
+                  </Text>
+                )}
+              </ShadowView>
+            ))}
           {/* 予定がない場合 */}
           {todayEvents.length === 0 && todayLocalEvents.length === 0 && (
-            <ShadowView
-              style={[styles.itemBox, { backgroundColor: bgColor }]}
-            >
+            <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
               <Text style={[styles.itemTime, { color: textColor }]}>
                 今日の予定はありません
               </Text>
@@ -354,51 +531,52 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionHeaderText}>
-              明日 {new Date(Date.now() + 86400000).toLocaleDateString("ja-JP")}の予定
+              明日 {new Date(Date.now() + 86400000).toLocaleDateString("ja-JP")}
+              の予定
             </Text>
           </View>
           {/* Google Calendarの予定 */}
-          {tomorrowEvents.length > 0 && tomorrowEvents.map((event) => (
-            <ShadowView
-              key={`gcal-${event.id}`}
-              style={[styles.itemBox, { backgroundColor: bgColor }]}
-            >
-              <Text style={[styles.itemTime, { color: textColor }]}>
-                ▶ {formatEventTime(event.start)} {event.title}
-              </Text>
-              {event.location && (
-                <Text style={[styles.itemDetail, { color: textColor }]}>
-                  └ 場所: {event.location}
+          {tomorrowEvents.length > 0 &&
+            tomorrowEvents.map((event) => (
+              <ShadowView
+                key={`gcal-${event.id}`}
+                style={[styles.itemBox, { backgroundColor: bgColor }]}
+              >
+                <Text style={[styles.itemTime, { color: textColor }]}>
+                  ▶ {formatEventTime(event.start)} {event.title}
                 </Text>
-              )}
-              {event.description && (
-                <Text style={[styles.itemDetail, { color: textColor }]}>
-                  └ {event.description}
-                </Text>
-              )}
-            </ShadowView>
-          ))}
+                {event.location && (
+                  <Text style={[styles.itemDetail, { color: textColor }]}>
+                    └ 場所: {event.location}
+                  </Text>
+                )}
+                {event.description && (
+                  <Text style={[styles.itemDetail, { color: textColor }]}>
+                    └ {event.description}
+                  </Text>
+                )}
+              </ShadowView>
+            ))}
           {/* ローカル予定 */}
-          {tomorrowLocalEvents.length > 0 && tomorrowLocalEvents.map((event) => (
-            <ShadowView
-              key={`local-${event.id}`}
-              style={[styles.itemBox, { backgroundColor: bgColor }]}
-            >
-              <Text style={[styles.itemTime, { color: textColor }]}>
-                ▶ {formatEventTime(event.startTime)} {event.title}
-              </Text>
-              {event.location && (
-                <Text style={[styles.itemDetail, { color: textColor }]}>
-                  └ 場所: {event.location}
+          {tomorrowLocalEvents.length > 0 &&
+            tomorrowLocalEvents.map((event) => (
+              <ShadowView
+                key={`local-${event.id}`}
+                style={[styles.itemBox, { backgroundColor: bgColor }]}
+              >
+                <Text style={[styles.itemTime, { color: textColor }]}>
+                  ▶ {formatEventTime(event.startTime)} {event.title}
                 </Text>
-              )}
-            </ShadowView>
-          ))}
+                {event.location && (
+                  <Text style={[styles.itemDetail, { color: textColor }]}>
+                    └ 場所: {event.location}
+                  </Text>
+                )}
+              </ShadowView>
+            ))}
           {/* 予定がない場合 */}
           {tomorrowEvents.length === 0 && tomorrowLocalEvents.length === 0 && (
-            <ShadowView
-              style={[styles.itemBox, { backgroundColor: bgColor }]}
-            >
+            <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
               <Text style={[styles.itemTime, { color: textColor }]}>
                 明日の予定はありません
               </Text>
@@ -450,6 +628,87 @@ export default function HomeScreen() {
           <GoogleCalendarAuth onAuthSuccess={handleAuthSuccess} />
         </SafeAreaView>
       </Modal>
+
+      {/* 予定ずらしモーダル */}
+      <Modal
+        visible={showShiftModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowShiftModal(false)}
+      >
+        <View style={styles.shiftModalOverlay}>
+          <View style={[styles.shiftModalContent, { backgroundColor: bgColor }]}>
+            <Text style={[styles.shiftModalTitle, { color: textColor }]}>
+              予定をずらす
+            </Text>
+            {countdownInfo?.event && (
+              <Text style={[styles.shiftModalEventTitle, { color: textColor }]}>
+                {countdownInfo.event.title}
+              </Text>
+            )}
+            <View style={styles.pickerContainer}>
+              <Text style={[styles.pickerLabel, { color: textColor }]}>
+                何分ずらしますか？
+              </Text>
+              <Picker
+                selectedValue={shiftMinutes}
+                onValueChange={(value) => setShiftMinutes(value)}
+                style={[styles.picker, { color: textColor }]}
+                itemStyle={{ color: textColor }}
+              >
+                <Picker.Item label="5分" value={5} />
+                <Picker.Item label="10分" value={10} />
+                <Picker.Item label="15分" value={15} />
+                <Picker.Item label="20分" value={20} />
+                <Picker.Item label="30分" value={30} />
+                <Picker.Item label="45分" value={45} />
+                <Picker.Item label="1時間" value={60} />
+                <Picker.Item label="1時間30分" value={90} />
+                <Picker.Item label="2時間" value={120} />
+              </Picker>
+            </View>
+            <View style={styles.fixEndTimeRow}>
+              <Text style={[styles.fixEndTimeLabel, { color: textColor }]}>
+                終了時刻を固定する
+              </Text>
+              <Switch
+                value={fixEndTime}
+                onValueChange={setFixEndTime}
+                trackColor={{ false: "#767577", true: "#ff9500" }}
+                thumbColor={fixEndTime ? "#fff" : "#f4f3f4"}
+              />
+            </View>
+            <View style={styles.shiftModalButtons}>
+              <TouchableOpacity
+                style={styles.shiftCancelButton}
+                onPress={() => setShowShiftModal(false)}
+              >
+                <Text style={styles.shiftCancelButtonText}>キャンセル</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.shiftConfirmButton}
+                onPress={handleShiftEvent}
+              >
+                <Text style={styles.shiftConfirmButtonText}>変更する</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 予定編集モーダル */}
+      {editingEvent && (
+        <AddEventModal
+          visible={showEditModal}
+          selectedDate={editingEvent.startTime.toISOString().split("T")[0]}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingEvent(null);
+          }}
+          onSave={handleSaveEditedEvent}
+          editingEvent={editingEvent}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -598,5 +857,106 @@ const styles = StyleSheet.create({
   closeButton: {
     fontSize: 16,
     color: "#007aff",
+  },
+  // カウントダウンボタン
+  countdownButtons: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 12,
+  },
+  shiftButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  shiftButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  editButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  editButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  // ずらしモーダル
+  shiftModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  shiftModalContent: {
+    width: "85%",
+    borderRadius: 14,
+    padding: 20,
+  },
+  shiftModalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  shiftModalEventTitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  pickerContainer: {
+    marginBottom: 16,
+  },
+  pickerLabel: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  picker: {
+    height: 150,
+  },
+  fixEndTimeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#ccc",
+    marginBottom: 16,
+  },
+  fixEndTimeLabel: {
+    fontSize: 14,
+    flex: 1,
+  },
+  shiftModalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  shiftCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: "#e0e0e0",
+    alignItems: "center",
+  },
+  shiftCancelButtonText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  shiftConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: "#ff9500",
+    alignItems: "center",
+  },
+  shiftConfirmButtonText: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "600",
   },
 });

@@ -3,7 +3,7 @@ import {
   addDays,
   format,
   getDay,
-  subWeeks
+  subWeeks,
 } from "date-fns";
 import { ja } from "date-fns/locale";
 import React, { useContext, useEffect, useMemo, useState } from "react";
@@ -351,6 +351,7 @@ export default function CalendarScreen() {
             bgColor={bgColor}
             weekDates={weekDates}
             items={items}
+            events={events}
             selectedDate={selectedDate}
             onSelectDate={(d) => setSelectedDate(d)}
             onEventPress={handleEventPress}
@@ -401,12 +402,18 @@ export default function CalendarScreen() {
   );
 }
 
-/* ---------- WeekView : 週の日を横並びで選べる簡易ビュー ---------- */
+/* ---------- WeekView : 時間軸タイムライン表示 ---------- */
+const HOUR_HEIGHT = 60; // 1時間あたりの高さ（px）
+const TIMELINE_START_HOUR = 0; // 表示開始時刻
+const TIMELINE_END_HOUR = 24; // 表示終了時刻
+const TIME_LABEL_WIDTH = 50; // 左の時間ラベル幅
+
 function WeekView({
   textColor,
   bgColor,
   weekDates,
   items,
+  events,
   selectedDate,
   onSelectDate,
   onEventPress,
@@ -415,10 +422,17 @@ function WeekView({
   bgColor: string;
   weekDates: string[];
   items: CalendarItems;
+  events: EventData[];
   selectedDate: string;
   onSelectDate: (d: string) => void;
   onEventPress: (eventId: string) => void;
 }) {
+  const { theme } = useContext(ThemeContext);
+  const timelineLineColor = theme === "light" ? "#e0e0e0" : "#3a3a3c";
+  const nowLineColor = "#FF3B30";
+  const eventBgColor = theme === "light" ? "#007AFF20" : "#007AFF40";
+  const eventBorderColor = "#007AFF";
+
   // 週の範囲文字列を生成
   const weekRangeText = useMemo(() => {
     const start = new Date(weekDates[0]);
@@ -430,8 +444,41 @@ function WeekView({
     )}週`;
   }, [weekDates]);
 
+  // 選択日のイベントをフィルタ
+  const dayEvents = useMemo(() => {
+    return events.filter((e) => {
+      const dateKey = e.startTime.toISOString().slice(0, 10);
+      return dateKey === selectedDate;
+    });
+  }, [events, selectedDate]);
+
+  // 現在時刻の位置を計算
+  const nowPosition = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    if (todayStr !== selectedDate) return null;
+    const hours = now.getHours() + now.getMinutes() / 60;
+    return (hours - TIMELINE_START_HOUR) * HOUR_HEIGHT;
+  }, [selectedDate]);
+
+  // 選択日のタイトル
+  const selectedDayTitle = useMemo(() => {
+    const d = new Date(selectedDate);
+    return format(d, "M月d日・E", { locale: ja });
+  }, [selectedDate]);
+
+  // 時間ラベル配列
+  const hourLabels = useMemo(() => {
+    const labels: number[] = [];
+    for (let h = TIMELINE_START_HOUR; h <= TIMELINE_END_HOUR; h++) {
+      labels.push(h);
+    }
+    return labels;
+  }, []);
+
   return (
     <>
+      {/* 週ヘッダー */}
       <ShadowView style={[styles.sectionHeader, { backgroundColor: "#000" }]}>
         <View style={styles.weekHeaderContainer}>
           <TouchableOpacity
@@ -456,6 +503,7 @@ function WeekView({
         </View>
       </ShadowView>
 
+      {/* 週の日ストリップ */}
       <View style={[styles.weekStrip]}>
         {weekDates.map((d) => {
           const dayNum = format(new Date(d), "d");
@@ -474,7 +522,7 @@ function WeekView({
               ]}
               onPress={() => onSelectDate(d)}
             >
-              <Text style={{ color: selected ? "#fff" : dayColor, fontWeight: '600' }}>
+              <Text style={{ color: selected ? "#fff" : dayColor, fontWeight: "600" }}>
                 {dayNum}
               </Text>
               <Text
@@ -507,25 +555,117 @@ function WeekView({
         })}
       </View>
 
-      {/* 選択日の予定を下に表示 */}
-      <View style={{ marginTop: 8 }}>
-        {(items[selectedDate] || []).length === 0 ? (
-          <ShadowView style={[styles.itemBox, { backgroundColor: bgColor }]}>
-            <Text style={{ color: textColor }}>予定はありません</Text>
-          </ShadowView>
-        ) : (
-          (items[selectedDate] || []).map((it) => (
-            <TouchableOpacity key={it.id} onPress={() => onEventPress(it.id)}>
-              <ShadowView
-                style={[styles.itemBox, { backgroundColor: bgColor }]}
-              >
-                <Text style={{ color: textColor }}>
-                  {it.time} {it.title}
-                </Text>
-              </ShadowView>
-            </TouchableOpacity>
-          ))
+      {/* 選択日タイトル */}
+      <View style={styles.timelineDayHeader}>
+        <Text style={[styles.timelineDayHeaderText, { color: textColor }]}>
+          {selectedDayTitle}
+        </Text>
+      </View>
+
+      {/* タイムライン */}
+      <View style={styles.timelineContainer}>
+        {/* 時間軸とグリッド線 */}
+        {hourLabels.map((hour) => (
+          <View
+            key={hour}
+            style={[
+              styles.timelineHourRow,
+              { height: HOUR_HEIGHT },
+            ]}
+          >
+            <View style={styles.timelineLabelContainer}>
+              <Text style={[styles.timelineLabel, { color: textColor + "80" }]}>
+                {hour < TIMELINE_END_HOUR ? `${hour}:00` : ""}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.timelineGridLine,
+                { borderTopColor: timelineLineColor },
+              ]}
+            />
+          </View>
+        ))}
+
+        {/* 現在時刻の赤い線 */}
+        {nowPosition !== null && (
+          <View
+            style={[
+              styles.nowLine,
+              {
+                top: nowPosition,
+                left: TIME_LABEL_WIDTH - 4,
+              },
+            ]}
+          >
+            <View style={[styles.nowDot, { backgroundColor: nowLineColor }]} />
+            <View style={[styles.nowLineBar, { backgroundColor: nowLineColor }]} />
+          </View>
         )}
+
+        {/* イベントブロック */}
+        {dayEvents.map((event) => {
+          const startHours =
+            event.startTime.getHours() +
+            event.startTime.getMinutes() / 60;
+          const endHours =
+            event.endTime.getHours() +
+            event.endTime.getMinutes() / 60;
+          const top = (startHours - TIMELINE_START_HOUR) * HOUR_HEIGHT;
+          const height = Math.max(
+            (endHours - startHours) * HOUR_HEIGHT,
+            HOUR_HEIGHT * 0.5,
+          ); // 最小高さ30分
+
+          const startStr = event.startTime.toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const endStr = event.endTime.toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+          return (
+            <TouchableOpacity
+              key={event.id}
+              style={[
+                styles.timelineEvent,
+                {
+                  top,
+                  height,
+                  left: TIME_LABEL_WIDTH + 4,
+                  right: 8,
+                  backgroundColor: eventBgColor,
+                  borderLeftColor: eventBorderColor,
+                },
+              ]}
+              onPress={() => onEventPress(event.id)}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[styles.timelineEventTitle, { color: textColor }]}
+                numberOfLines={1}
+              >
+                {event.title}
+              </Text>
+              <Text
+                style={[styles.timelineEventTime, { color: textColor + "99" }]}
+                numberOfLines={1}
+              >
+                {startStr}－{endStr}
+              </Text>
+              {event.location && (
+                <Text
+                  style={[styles.timelineEventLocation, { color: textColor + "80" }]}
+                  numberOfLines={1}
+                >
+                  {event.location}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </>
   );
@@ -838,5 +978,75 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     textAlign: "center",
+  },
+  /* Timeline styles */
+  timelineDayHeader: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  timelineDayHeaderText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  timelineContainer: {
+    position: "relative",
+    height: HOUR_HEIGHT * (TIMELINE_END_HOUR - TIMELINE_START_HOUR + 1),
+  },
+  timelineHourRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  timelineLabelContainer: {
+    width: TIME_LABEL_WIDTH,
+    alignItems: "flex-end",
+    paddingRight: 8,
+    marginTop: -8,
+  },
+  timelineLabel: {
+    fontSize: 12,
+  },
+  timelineGridLine: {
+    flex: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    height: 0,
+    marginTop: 0,
+  },
+  nowLine: {
+    position: "absolute",
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  nowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  nowLineBar: {
+    flex: 1,
+    height: 1.5,
+  },
+  timelineEvent: {
+    position: "absolute",
+    borderLeftWidth: 3,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    overflow: "hidden",
+    zIndex: 5,
+  },
+  timelineEventTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  timelineEventTime: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  timelineEventLocation: {
+    fontSize: 11,
+    marginTop: 1,
   },
 });
