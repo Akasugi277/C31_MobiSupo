@@ -1,25 +1,20 @@
 // src/screens/CalendarScreen.tsx
-import {
-  addDays,
-  format,
-  getDay,
-  subWeeks,
-} from "date-fns";
+import { addDays, format, getDay, subWeeks } from "date-fns";
 import { ja } from "date-fns/locale";
-import React, { useContext, useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import {
-  DateData,
-  LocaleConfig,
-  Calendar as RNCalendar,
+    DateData,
+    LocaleConfig,
+    Calendar as RNCalendar,
 } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
@@ -29,8 +24,8 @@ import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
 import * as authService from "../services/authService";
 import {
-  CalendarEvent,
-  fetchCalendarEvents,
+    CalendarEvent,
+    fetchCalendarEvents,
 } from "../services/calendarService";
 import * as notificationService from "../services/notificationService";
 import * as storageService from "../services/storageService";
@@ -45,6 +40,8 @@ type CalendarItem = {
 type CalendarItems = {
   [date: string]: CalendarItem[];
 };
+
+const toDateKey = (date: Date): string => format(date, "yyyy-MM-dd");
 
 // 日本語ロケール設定
 LocaleConfig.locales["jp"] = {
@@ -153,9 +150,27 @@ export default function CalendarScreen() {
 
   const [mode, setMode] = useState<ViewMode>("week");
 
+  const [now, setNow] = useState(new Date());
+
   // 選択日を今日に（安定化）
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = useMemo(() => toDateKey(now), [now]);
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const prevTodayRef = useRef(todayStr);
+
+  // 現在時刻を毎分更新（今日の切り替わりを反映）
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 今日の変化を追従（ユーザーが別日を選択している場合は維持）
+  useEffect(() => {
+    const prevToday = prevTodayRef.current;
+    if (selectedDate === prevToday && todayStr !== prevToday) {
+      setSelectedDate(todayStr);
+    }
+    prevTodayRef.current = todayStr;
+  }, [selectedDate, todayStr]);
 
   // 現在のユーザーIDを保持
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -205,7 +220,11 @@ export default function CalendarScreen() {
       const savedEvents = await storageService.getEvents(currentUserId);
       if (savedEvents.length > 0) {
         setEvents(savedEvents);
-        console.log(`予定を読み込みました (userId: ${currentUserId}):`, savedEvents.length, "件");
+        console.log(
+          `予定を読み込みました (userId: ${currentUserId}):`,
+          savedEvents.length,
+          "件",
+        );
       }
     } catch (error) {
       console.error("予定読み込みエラー:", error);
@@ -215,14 +234,17 @@ export default function CalendarScreen() {
   // Google Calendar予定を取得
   const fetchGoogleCalendar = async () => {
     try {
-      const authenticated = await storageService.isGoogleCalendarAuthenticated();
+      const authenticated =
+        await storageService.isGoogleCalendarAuthenticated();
       if (!authenticated) return;
 
       const token = await storageService.getGoogleCalendarToken();
       if (token) {
         const events = await fetchCalendarEvents(token, 50);
         setCalendarEvents(events);
-        console.log(`Google Calendarから${events.length}件の予定を取得しました（カレンダー画面）`);
+        console.log(
+          `Google Calendarから${events.length}件の予定を取得しました（カレンダー画面）`,
+        );
       }
     } catch (error) {
       console.error("Google Calendar取得エラー（カレンダー画面）:", error);
@@ -241,7 +263,7 @@ export default function CalendarScreen() {
 
     // ローカル予定を追加
     events.forEach((event) => {
-      const dateKey = event.startTime.toISOString().slice(0, 10);
+      const dateKey = toDateKey(event.startTime);
       if (!itemsMap[dateKey]) {
         itemsMap[dateKey] = [];
       }
@@ -251,14 +273,16 @@ export default function CalendarScreen() {
           hour: "2-digit",
           minute: "2-digit",
         }),
-        title: event.location ? `${event.title} (${event.location})` : event.title,
+        title: event.location
+          ? `${event.title} (${event.location})`
+          : event.title,
         source: "local",
       });
     });
 
     // Google Calendar予定を追加
     calendarEvents.forEach((gEvent) => {
-      const dateKey = gEvent.start.toISOString().slice(0, 10);
+      const dateKey = toDateKey(gEvent.start);
       if (!itemsMap[dateKey]) {
         itemsMap[dateKey] = [];
       }
@@ -268,7 +292,9 @@ export default function CalendarScreen() {
           hour: "2-digit",
           minute: "2-digit",
         }),
-        title: gEvent.location ? `${gEvent.title} (${gEvent.location})` : gEvent.title,
+        title: gEvent.location
+          ? `${gEvent.title} (${gEvent.location})`
+          : gEvent.title,
         source: "google",
       });
     });
@@ -301,28 +327,38 @@ export default function CalendarScreen() {
     try {
       // 削除する予定を取得
       const eventToDelete = events.find((e) => e.id === eventId);
-      
+
       if (eventToDelete) {
         // 予定に関連する通知IDを削除
         if (eventToDelete.notificationIds?.departure) {
-          console.log("🗑️ 出発通知を削除:", eventToDelete.notificationIds.departure);
-          await notificationService.cancelNotification(eventToDelete.notificationIds.departure);
+          console.log(
+            "🗑️ 出発通知を削除:",
+            eventToDelete.notificationIds.departure,
+          );
+          await notificationService.cancelNotification(
+            eventToDelete.notificationIds.departure,
+          );
         }
         if (eventToDelete.notificationIds?.preparation) {
-          console.log("🗑️ 準備通知を削除:", eventToDelete.notificationIds.preparation);
-          await notificationService.cancelNotification(eventToDelete.notificationIds.preparation);
+          console.log(
+            "🗑️ 準備通知を削除:",
+            eventToDelete.notificationIds.preparation,
+          );
+          await notificationService.cancelNotification(
+            eventToDelete.notificationIds.preparation,
+          );
         }
       }
-      
+
       // 予定をリストから削除
       const updatedEvents = events.filter((e) => e.id !== eventId);
       setEvents(updatedEvents);
-      
+
       // ストレージに保存
       if (currentUserId) {
         await storageService.saveEvents(updatedEvents, currentUserId);
       }
-      
+
       console.log("✅ 予定と通知を削除しました:", eventId);
     } catch (error) {
       console.error("❌ 予定削除エラー:", error);
@@ -332,7 +368,9 @@ export default function CalendarScreen() {
 
   // 予定を更新
   const handleUpdateEvent = async (updatedEvent: EventData) => {
-    const updatedEvents = events.map((e) => (e.id === updatedEvent.id ? updatedEvent : e));
+    const updatedEvents = events.map((e) =>
+      e.id === updatedEvent.id ? updatedEvent : e,
+    );
     setEvents(updatedEvents);
     if (currentUserId) {
       await storageService.saveEvents(updatedEvents, currentUserId);
@@ -409,6 +447,7 @@ export default function CalendarScreen() {
             events={events}
             calendarEvents={calendarEvents}
             selectedDate={selectedDate}
+            now={now}
             onSelectDate={(d) => setSelectedDate(d)}
             onEventPress={handleEventPress}
           />
@@ -419,6 +458,7 @@ export default function CalendarScreen() {
             textColor={textColor}
             bgColor={bgColor}
             items={items}
+            todayStr={todayStr}
             onDayPress={(d) => {
               setSelectedDate(d.dateString);
               // 予定がある日をタップしたら週間ビューに切り替え
@@ -472,6 +512,7 @@ function WeekView({
   events,
   calendarEvents,
   selectedDate,
+  now,
   onSelectDate,
   onEventPress,
 }: {
@@ -482,6 +523,7 @@ function WeekView({
   events: EventData[];
   calendarEvents: CalendarEvent[];
   selectedDate: string;
+  now: Date;
   onSelectDate: (d: string) => void;
   onEventPress: (eventId: string) => void;
 }) {
@@ -500,14 +542,14 @@ function WeekView({
     return `${format(start, "yyyy年M月d日", { locale: ja })}～${format(
       end,
       "yyyy年M月d日",
-      { locale: ja }
+      { locale: ja },
     )}週`;
   }, [weekDates]);
 
   // 選択日のローカルイベントをフィルタ
   const dayEvents = useMemo(() => {
     return events.filter((e) => {
-      const dateKey = e.startTime.toISOString().slice(0, 10);
+      const dateKey = toDateKey(e.startTime);
       return dateKey === selectedDate;
     });
   }, [events, selectedDate]);
@@ -515,19 +557,18 @@ function WeekView({
   // 選択日のGoogle Calendarイベントをフィルタ
   const dayGoogleEvents = useMemo(() => {
     return calendarEvents.filter((e) => {
-      const dateKey = e.start.toISOString().slice(0, 10);
+      const dateKey = toDateKey(e.start);
       return dateKey === selectedDate;
     });
   }, [calendarEvents, selectedDate]);
 
   // 現在時刻の位置を計算
   const nowPosition = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = toDateKey(now);
     if (todayStr !== selectedDate) return null;
     const hours = now.getHours() + now.getMinutes() / 60;
     return (hours - TIMELINE_START_HOUR) * HOUR_HEIGHT;
-  }, [selectedDate]);
+  }, [now, selectedDate]);
 
   // 選択日のタイトル
   const selectedDayTitle = useMemo(() => {
@@ -590,7 +631,12 @@ function WeekView({
               ]}
               onPress={() => onSelectDate(d)}
             >
-              <Text style={{ color: selected ? "#fff" : dayColor, fontWeight: "600" }}>
+              <Text
+                style={{
+                  color: selected ? "#fff" : dayColor,
+                  fontWeight: "600",
+                }}
+              >
                 {dayNum}
               </Text>
               <Text
@@ -624,7 +670,10 @@ function WeekView({
                     <View
                       style={[
                         styles.dot,
-                        { backgroundColor: selected ? "#fff" : "#34C759", marginLeft: 2 },
+                        {
+                          backgroundColor: selected ? "#fff" : "#34C759",
+                          marginLeft: 2,
+                        },
                       ]}
                     />
                   )}
@@ -648,10 +697,7 @@ function WeekView({
         {hourLabels.map((hour) => (
           <View
             key={hour}
-            style={[
-              styles.timelineHourRow,
-              { height: HOUR_HEIGHT },
-            ]}
+            style={[styles.timelineHourRow, { height: HOUR_HEIGHT }]}
           >
             <View style={styles.timelineLabelContainer}>
               <Text style={[styles.timelineLabel, { color: textColor + "80" }]}>
@@ -679,18 +725,18 @@ function WeekView({
             ]}
           >
             <View style={[styles.nowDot, { backgroundColor: nowLineColor }]} />
-            <View style={[styles.nowLineBar, { backgroundColor: nowLineColor }]} />
+            <View
+              style={[styles.nowLineBar, { backgroundColor: nowLineColor }]}
+            />
           </View>
         )}
 
         {/* ローカルイベントブロック */}
         {dayEvents.map((event) => {
           const startHours =
-            event.startTime.getHours() +
-            event.startTime.getMinutes() / 60;
+            event.startTime.getHours() + event.startTime.getMinutes() / 60;
           const endHours =
-            event.endTime.getHours() +
-            event.endTime.getMinutes() / 60;
+            event.endTime.getHours() + event.endTime.getMinutes() / 60;
           const top = (startHours - TIMELINE_START_HOUR) * HOUR_HEIGHT;
           const height = Math.max(
             (endHours - startHours) * HOUR_HEIGHT,
@@ -737,7 +783,10 @@ function WeekView({
               </Text>
               {event.location && (
                 <Text
-                  style={[styles.timelineEventLocation, { color: textColor + "80" }]}
+                  style={[
+                    styles.timelineEventLocation,
+                    { color: textColor + "80" },
+                  ]}
                   numberOfLines={1}
                 >
                   {event.location}
@@ -750,11 +799,8 @@ function WeekView({
         {/* Google Calendarイベントブロック（緑色） */}
         {dayGoogleEvents.map((gEvent) => {
           const startHours =
-            gEvent.start.getHours() +
-            gEvent.start.getMinutes() / 60;
-          const endHours =
-            gEvent.end.getHours() +
-            gEvent.end.getMinutes() / 60;
+            gEvent.start.getHours() + gEvent.start.getMinutes() / 60;
+          const endHours = gEvent.end.getHours() + gEvent.end.getMinutes() / 60;
           const top = (startHours - TIMELINE_START_HOUR) * HOUR_HEIGHT;
           const height = Math.max(
             (endHours - startHours) * HOUR_HEIGHT,
@@ -799,16 +845,16 @@ function WeekView({
               </Text>
               {gEvent.location && (
                 <Text
-                  style={[styles.timelineEventLocation, { color: textColor + "80" }]}
+                  style={[
+                    styles.timelineEventLocation,
+                    { color: textColor + "80" },
+                  ]}
                   numberOfLines={1}
                 >
                   {gEvent.location}
                 </Text>
               )}
-              <Text
-                style={[styles.googleCalendarBadge]}
-                numberOfLines={1}
-              >
+              <Text style={[styles.googleCalendarBadge]} numberOfLines={1}>
                 Google Calendar
               </Text>
             </View>
@@ -836,18 +882,19 @@ function MonthView({
   textColor,
   bgColor,
   items,
+  todayStr,
   onDayPress,
 }: {
   textColor: string;
   bgColor: string;
   items: CalendarItems;
+  todayStr: string;
   onDayPress: (d: DateData) => void;
 }) {
   // マーク付きの日付を準備
   const markedDates: MyMarkedDates = useMemo(() => {
     const marks: MyMarkedDates = {};
-    const today = new Date().toISOString().split("T")[0];
-    marks[today] = {
+    marks[todayStr] = {
       selected: true,
       selectedColor: "#007AFF",
     };
@@ -864,7 +911,7 @@ function MonthView({
       };
     });
     return marks;
-  }, [items]);
+  }, [items, todayStr]);
 
   // テーマごとのカレンダー色設定
   const calendarTheme = {
@@ -930,7 +977,7 @@ function MonthView({
         // 月が変わった時にタイトルを更新
         onMonthChange={(dateObj) => {
           setCurrentMonth(
-            `${dateObj.year}-${String(dateObj.month).padStart(2, "0")}`
+            `${dateObj.year}-${String(dateObj.month).padStart(2, "0")}`,
           );
         }}
         dayComponent={({ date, state, marking }) => {
@@ -990,14 +1037,19 @@ function MonthView({
                     <View
                       style={[
                         styles.eventDot,
-                        { backgroundColor: isSelected ? "#fff" : "#34C759", marginLeft: customMarking?.hasLocal ? 3 : 0 },
+                        {
+                          backgroundColor: isSelected ? "#fff" : "#34C759",
+                          marginLeft: customMarking?.hasLocal ? 3 : 0,
+                        },
                       ]}
                     />
                   )}
                 </View>
               )}
               {isHoliday && (
-                <Text style={[styles.holidayText, isSelected && { color: "#fff" }]}>
+                <Text
+                  style={[styles.holidayText, isSelected && { color: "#fff" }]}
+                >
                   {isHoliday}
                 </Text>
               )}

@@ -1,19 +1,25 @@
 // src/screens/HomeScreen.tsx
-import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Modal,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
 import { Picker } from "@react-native-picker/picker";
+import { useFocusEffect } from "@react-navigation/native";
+import React, {
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
+import {
+    Alert,
+    Modal,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AddEventModal, { EventData } from "../components/AddEventModal";
 import GoogleCalendarAuth from "../components/GoogleCalendarAuth";
@@ -21,22 +27,22 @@ import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
 import * as authService from "../services/authService";
 import {
-  CalendarEvent,
-  fetchCalendarEvents,
+    CalendarEvent,
+    fetchCalendarEvents,
 } from "../services/calendarService";
 import {
-  clearGoogleCalendarToken,
-  getEvents,
-  getGoogleCalendarToken,
-  isGoogleCalendarAuthenticated,
-  saveEvents,
-  saveGoogleCalendarToken,
+    clearGoogleCalendarToken,
+    getEvents,
+    getGoogleCalendarToken,
+    isGoogleCalendarAuthenticated,
+    saveEvents,
+    saveGoogleCalendarToken,
 } from "../services/storageService";
 import {
-  AddressData,
-  getCurrentAddress,
-  getCurrentWeather,
-  WeatherData,
+    AddressData,
+    getCurrentAddress,
+    getCurrentWeather,
+    WeatherData,
 } from "../services/weatherService";
 
 export default function HomeScreen() {
@@ -313,7 +319,12 @@ export default function HomeScreen() {
       timeText = mins === 0 ? `${hours}時間` : `${hours}時間${mins}分`;
     }
 
-    return { time: timeText, title: nextEventTitle, event: nextEvent, isLocalEvent };
+    return {
+      time: timeText,
+      title: nextEventTitle,
+      event: nextEvent,
+      isLocalEvent,
+    };
   }, [now, localEvents, calendarEvents]);
 
   // 予定をずらす処理
@@ -347,7 +358,7 @@ export default function HomeScreen() {
 
     // ローカル予定を更新
     const updatedEvents = localEvents.map((e) =>
-      e.id === event.id ? updatedEvent : e
+      e.id === event.id ? updatedEvent : e,
     );
     await saveEvents(updatedEvents, user.id);
     setLocalEvents(updatedEvents);
@@ -355,7 +366,7 @@ export default function HomeScreen() {
     setShowShiftModal(false);
     Alert.alert(
       "予定をずらしました",
-      `${event.title}を${shiftMinutes}分後ろにずらしました`
+      `${event.title}を${shiftMinutes}分後ろにずらしました`,
     );
   };
 
@@ -373,7 +384,7 @@ export default function HomeScreen() {
     if (!user) return;
 
     const updatedEvents = localEvents.map((e) =>
-      e.id === updatedEvent.id ? updatedEvent : e
+      e.id === updatedEvent.id ? updatedEvent : e,
     );
     await saveEvents(updatedEvents, user.id);
     setLocalEvents(updatedEvents);
@@ -443,7 +454,8 @@ export default function HomeScreen() {
           {countdownInfo ? (
             <>
               <Text style={[styles.countdownLabel, { color: textColor }]}>
-                次の予定まで: <Text style={styles.countdownTime}>{countdownInfo.time}</Text>
+                次の予定まで:{" "}
+                <Text style={styles.countdownTime}>{countdownInfo.time}</Text>
               </Text>
               <Text style={[{ color: textColor, fontSize: 13, marginTop: 2 }]}>
                 {countdownInfo.title}
@@ -637,7 +649,9 @@ export default function HomeScreen() {
         onRequestClose={() => setShowShiftModal(false)}
       >
         <View style={styles.shiftModalOverlay}>
-          <View style={[styles.shiftModalContent, { backgroundColor: bgColor }]}>
+          <View
+            style={[styles.shiftModalContent, { backgroundColor: bgColor }]}
+          >
             <Text style={[styles.shiftModalTitle, { color: textColor }]}>
               予定をずらす
             </Text>
