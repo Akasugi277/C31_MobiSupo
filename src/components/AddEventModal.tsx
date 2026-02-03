@@ -372,6 +372,12 @@ export default function AddEventModal({
         }
       }
 
+      // 選択中のルート情報を取得
+      const selectedRoute =
+        selectedRouteIndex !== null && routeOptions[selectedRouteIndex]
+          ? routeOptions[selectedRouteIndex]
+          : null;
+
       const eventData: EventData = {
         id: editingEvent?.id || Date.now().toString(),
         title,
@@ -379,6 +385,9 @@ export default function AddEventModal({
         startTime,
         endTime,
         travelTime: travelTimeValue > 0 ? travelTimeValue : undefined,
+        travelMode: selectedRoute?.mode || editingEvent?.travelMode,
+        routes: routeOptions.length > 0 ? routeOptions : editingEvent?.routes,
+        selectedRouteIndex: selectedRouteIndex ?? editingEvent?.selectedRouteIndex,
         repeat,
         notification: notification && notificationMinutesBefore > 0,
         notificationMinutesBefore:
@@ -643,6 +652,16 @@ export default function AddEventModal({
                           距離: {route.distanceText}
                         </Text>
                       )}
+                      {route.mode === "transit" &&
+                        route.transitDetails?.delayInfo?.some(
+                          (d: any) => d.hasDelay
+                        ) && (
+                          <View style={styles.delayBadge}>
+                            <Text style={styles.delayBadgeText}>
+                              ⚠ 遅延あり
+                            </Text>
+                          </View>
+                        )}
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -1166,6 +1185,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginLeft: 32,
     marginTop: 2,
+  },
+  delayBadge: {
+    backgroundColor: "#FF3B30",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: "flex-start",
+    marginLeft: 32,
+    marginTop: 6,
+  },
+  delayBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "bold",
   },
   locationRow: {
     flexDirection: "row",

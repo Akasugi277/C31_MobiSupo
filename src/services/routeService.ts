@@ -17,6 +17,13 @@ export interface TransitDetails {
   transferCount?: number; // 乗り換え回数
   lines?: string[]; // 利用路線
   steps?: string[]; // 経路の各ステップ
+  delayInfo?: Array<{
+    lineName: string;
+    lineNameJa: string;
+    status: string;
+    statusText: string;
+    hasDelay: boolean;
+  }>;
 }
 
 // ルート情報の型定義
@@ -163,212 +170,60 @@ export async function reverseGeocode(coords: LocationCoords): Promise<string> {
 }
 
 /**
- * 座標から最寄り駅を取得（Google Places API）
+ * 車ルートの所要時間から電車での所要時間を推定
+ * Google Maps Directions API transit modeは日本国内で非対応のため、
+ * 車ルートをベースに推定値を算出する
+ *
+ * 推定ロジック:
+ * - 短距離（～10km）: 車の1.3倍（駅までの徒歩+待ち時間考慮）
+ * - 中距離（10～50km）: 車の0.9倍（電車の方が速いことが多い）
+ * - 長距離（50km～）: 車の0.7倍（新幹線・特急を想定）
  */
-async function getNearestStationFromCoords(coords: LocationCoords): Promise<string> {
-  try {
-    // Google Places API Nearby Searchで最寄りの駅を検索
-    const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${coords.latitude},${coords.longitude}&radius=1000&type=transit_station&key=${API_KEYS.GOOGLE_MAPS}&language=ja`;
-
-    console.log("最寄り駅検索 URL:", url);
-
-    const response = await axios.get(url);
-
-    console.log("Places API ステータス:", response.data.status);
-
-    // ステータスチェック
-    if (response.data.status !== "OK" && response.data.status !== "ZERO_RESULTS") {
-      console.error("Places APIエラー:", response.data.status);
-      console.error("エラーメッセージ:", response.data.error_message);
-      throw new Error(`最寄り駅検索失敗: ${response.data.status}`);
-    }
-
-    if (response.data.results && response.data.results.length > 0) {
-      // 最初の結果から駅名を取得
-      const stationName = response.data.results[0].name;
-      console.log("最寄り駅:", stationName);
-      return stationName;
-    }
-
-    throw new Error("最寄り駅が見つかりませんでした");
-  } catch (error: any) {
-    console.error("最寄り駅取得エラー:", error.message);
-    if (error.response) {
-      console.error("Places API レスポンスデータ:", JSON.stringify(error.response.data, null, 2));
-    }
-    throw error;
-  }
-}
-
-/**
- * 駅すぱあとAPIを使用してルートを検索（公共交通機関）
- * 注意: 駅すぱあとAPIキーを取得後に使用可能
- */
-async function searchEkispertRoute(
+async function estimateTransitRoute(
   origin: LocationCoords,
   destination: LocationCoords
 ): Promise<RouteInfo> {
-  // 駅すぱあとAPIキーが未設定の場合はエラー
-  if (API_KEYS.EKISPERT === "YOUR_EKISPERT_API_KEY_HERE") {
-    console.warn("駅すぱあとAPIキーが未設定です");
-    throw new Error(
-      "駅すぱあとAPIキーが未設定です。config.tsで設定してください。"
-    );
+  // まず車ルートを取得
+  const drivingRoute = await searchGoogleMapsRoute(origin, destination, "driving");
+
+  const distanceKm = drivingRoute.distance / 1000;
+
+  // 距離に応じた推定係数
+  let factor: number;
+  if (distanceKm <= 10) {
+    factor = 1.3; // 短距離: 駅への移動+待ち時間で車より遅い
+  } else if (distanceKm <= 50) {
+    factor = 0.9; // 中距離: 電車がやや有利
+  } else {
+    factor = 0.7; // 長距離: 新幹線等で大幅に速い
   }
 
-  try {
-    // 出発地の最寄り駅を検索
-    const originStation = await getNearestStationFromCoords(origin);
-    console.log(`出発地の最寄り駅: ${originStation}`);
+  const estimatedDuration = Math.round(drivingRoute.duration * factor);
+  const estimatedMinutes = Math.round(estimatedDuration / 60);
 
-    // 目的地の最寄り駅を検索
-    const destinationStation = await getNearestStationFromCoords(destination);
-    console.log(`目的地の最寄り駅: ${destinationStation}`);
-
-    // 駅名の正規化：「駅」という文字を削除
-    const normalizeStationName = (name: string): string => {
-      return name.replace(/駅$/, '').trim();
-    };
-
-    const normalizedOrigin = normalizeStationName(originStation);
-    const normalizedDestination = normalizeStationName(destinationStation);
-
-    // 駅すぱあとAPI: lightエンドポイント（フリープラン対応）
-    const url = `${API_ENDPOINTS.EKISPERT_BASE}/search/course/light?key=${API_KEYS.EKISPERT}&from=${encodeURIComponent(normalizedOrigin)}&to=${encodeURIComponent(normalizedDestination)}`;
-
-    console.log("駅すぱあとAPI リクエストURL:", url);
-    console.log("出発地:", normalizedOrigin);
-    console.log("目的地:", normalizedDestination);
-
-    const response = await axios.get(url);
-
-    console.log("駅すぱあとAPI レスポンス:", JSON.stringify(response.data, null, 2));
-
-    // lightエンドポイントの場合、直接Courseデータが返らないことがある
-    // ResourceURIのみが返る場合は、デフォルトの所要時間を使用
-    if (response.data.ResultSet?.Course) {
-      const course = response.data.ResultSet.Course[0];
-
-      // 所要時間を計算
-      const timeInfo = course.Route?.timeOnBoard || course.Route?.time || 30;
-      const durationMinutes = typeof timeInfo === 'number' ? timeInfo : 30;
-      const duration = durationMinutes * 60;
-
-      // 詳細情報を抽出
-      const transitDetails: TransitDetails = {
-        originStation: normalizedOrigin,
-        destinationStation: normalizedDestination,
-        fare: course.Price || undefined,
-        transferCount: course.Route?.transferCount || 0,
-        lines: [],
-        steps: [],
-      };
-
-      // 路線情報を抽出
-      if (course.Route?.Line) {
-        const lines = Array.isArray(course.Route.Line) ? course.Route.Line : [course.Route.Line];
-        transitDetails.lines = lines.map((line: any) => line.Name || "不明な路線");
-      }
-
-      // 経路のステップを構築
-      if (course.Route?.Point) {
-        const points = Array.isArray(course.Route.Point) ? course.Route.Point : [course.Route.Point];
-        transitDetails.steps = points.map((point: any) => point.Station?.Name || point.Name || "").filter(Boolean);
-      }
-
-      return {
-        mode: "transit",
-        duration,
-        durationText: `${durationMinutes}分`,
-        distance: 0,
-        distanceText: "-",
-        transitDetails,
-      };
-    }
-
-    // ResourceURIのみが返る場合（lightエンドポイントの制限）
-    if (response.data.ResultSet?.ResourceURI) {
-      console.warn("駅すぱあとAPI lightエンドポイントの制限: 詳細なルート情報が取得できません");
-      console.warn("ResourceURI:", response.data.ResultSet.ResourceURI);
-
-      // フォールバック: 駅間の直線距離から所要時間を推定
-      console.log("フォールバック: 駅間の距離から所要時間を推定");
-
-      // 2点間の距離を計算（Haversine formula）
-      const calculateDistance = (
-        lat1: number,
-        lon1: number,
-        lat2: number,
-        lon2: number
-      ): number => {
-        const R = 6371; // 地球の半径（km）
-        const dLat = ((lat2 - lat1) * Math.PI) / 180;
-        const dLon = ((lon2 - lon1) * Math.PI) / 180;
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos((lat1 * Math.PI) / 180) *
-            Math.cos((lat2 * Math.PI) / 180) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c; // km単位の距離
-      };
-
-      const distanceKm = calculateDistance(
-        origin.latitude,
-        origin.longitude,
-        destination.latitude,
-        destination.longitude
-      );
-
-      console.log(`駅間の直線距離: ${distanceKm.toFixed(2)}km`);
-
-      // 所要時間を推定
-      // 実際の線路距離 = 直線距離 × 1.3（曲がりを考慮）
-      // 電車の平均速度 = 40km/h（都市部）
-      // 乗り換え時間 = 5分（推定）
-      const actualDistance = distanceKm * 1.3;
-      const travelTimeHours = actualDistance / 40; // 40km/hで割る
-      const travelTimeMinutes = Math.round(travelTimeHours * 60);
-      const transferTime = 5; // 乗り換え時間（分）
-      const totalMinutes = travelTimeMinutes + transferTime;
-
-      console.log(`推定所要時間: 移動${travelTimeMinutes}分 + 乗り換え${transferTime}分 = ${totalMinutes}分`);
-
-      return {
-        mode: "transit",
-        duration: totalMinutes * 60, // 秒に変換
-        durationText: `約${totalMinutes}分`,
-        distance: Math.round(actualDistance * 1000), // メートルに変換
-        distanceText: `${actualDistance.toFixed(1)} km`,
-        transitDetails: {
-          originStation: normalizedOrigin,
-          destinationStation: normalizedDestination,
-          transferCount: 1, // 推定
-        },
-      };
-    }
-
-    throw new Error("ルートが見つかりませんでした");
-  } catch (error: any) {
-    console.error("駅すぱあと ルート検索エラー:", error.message);
-
-    if (error.response) {
-      console.error("ステータスコード:", error.response.status);
-      console.error("レスポンスヘッダー:", error.response.headers);
-      console.error("レスポンスデータ:", JSON.stringify(error.response.data, null, 2));
-    }
-
-    // 403エラーの場合、APIキーまたはリクエスト形式の問題
-    if (error.response?.status === 403) {
-      console.error("403エラー: APIキーが無効、期限切れ、またはリクエスト形式が正しくない可能性があります");
-      console.error("使用しているAPIキー:", API_KEYS.EKISPERT);
-    }
-
-    // フォールバック: 駅すぱあとが使えない場合はエラーを投げる
-    console.log("駅すぱあとAPIが使用できません");
-    throw error; // エラーを投げて、searchMultipleRoutesでnullとして扱う
+  let durationText: string;
+  if (estimatedMinutes < 60) {
+    durationText = `約${estimatedMinutes}分`;
+  } else {
+    const hours = Math.floor(estimatedMinutes / 60);
+    const mins = estimatedMinutes % 60;
+    durationText = mins === 0 ? `約${hours}時間` : `約${hours}時間${mins}分`;
   }
+
+  console.log(`電車ルート推定: 車${Math.round(drivingRoute.duration / 60)}分 × ${factor} = ${estimatedMinutes}分 (${distanceKm.toFixed(1)}km)`);
+
+  return {
+    mode: "transit",
+    duration: estimatedDuration,
+    durationText,
+    distance: drivingRoute.distance,
+    distanceText: drivingRoute.distanceText,
+    startLocation: origin,
+    endLocation: destination,
+    transitDetails: {
+      steps: [`推定所要時間（Google Mapsアプリで正確なルートを確認できます）`],
+    },
+  };
 }
 
 /**
@@ -383,8 +238,8 @@ export async function searchRoute(
 
   // モードに応じてAPIを使い分け
   if (mode === "transit") {
-    // 公共交通機関: 駅すぱあとAPIを使用（未設定時はGoogle Mapsにフォールバック）
-    routeInfo = await searchEkispertRoute(request.origin, request.destination);
+    // 公共交通機関: 車ルートから推定
+    routeInfo = await estimateTransitRoute(request.origin, request.destination);
   } else {
     // 徒歩・車: Google Maps APIを使用
     routeInfo = await searchGoogleMapsRoute(
@@ -404,7 +259,7 @@ export async function searchRoute(
 
 /**
  * 複数のモードでルートを検索して比較
- * 出発地と目的地の両方を座標で受け取り、Google Places APIで最寄り駅を検索
+ * 出発地と目的地の両方を座標で受け取る
  */
 export async function searchMultipleRoutes(
   origin: LocationCoords,
@@ -431,8 +286,8 @@ export async function searchMultipleRoutes(
         return null;
       }),
 
-    // 3. 電車ルート（駅すぱあと + Google Geocoding）
-    searchEkispertRoute(origin, destination)
+    // 3. 電車ルート（車ルートから推定）
+    estimateTransitRoute(origin, destination)
       .then((route) => ({ ...route, mode: "transit" as TransportMode }))
       .catch((error) => {
         console.warn("電車ルート検索に失敗:", error);

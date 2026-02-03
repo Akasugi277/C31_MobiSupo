@@ -88,6 +88,11 @@ export async function saveEvents(events: any[], userId?: string): Promise<void> 
       ...event,
       startTime: event.startTime.toISOString(),
       endTime: event.endTime.toISOString(),
+      // routes内のdepartureTimeもISO文字列に変換
+      routes: event.routes?.map((route: any) => ({
+        ...route,
+        departureTime: route.departureTime?.toISOString?.() ?? route.departureTime,
+      })),
     }));
     const storageKey = userId ? `${KEYS.EVENTS}_${userId}` : KEYS.EVENTS;
     await AsyncStorage.setItem(storageKey, JSON.stringify(eventsToSave));
@@ -115,6 +120,11 @@ export async function getEvents(userId?: string): Promise<any[]> {
       ...event,
       startTime: new Date(event.startTime),
       endTime: new Date(event.endTime),
+      // routes内のdepartureTimeも復元
+      routes: event.routes?.map((route: any) => ({
+        ...route,
+        departureTime: route.departureTime ? new Date(route.departureTime) : undefined,
+      })),
     }));
   } catch (error) {
     console.error("予定取得エラー:", error);

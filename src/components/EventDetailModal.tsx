@@ -251,10 +251,12 @@ export default function EventDetailModal({
                 )}
                 {event.travelTime && event.travelTime > 0 && (
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailIcon}>🚶</Text>
+                    <Text style={styles.detailIcon}>
+                      {event.travelMode === "transit" ? "🚆" : event.travelMode === "driving" ? "🚗" : "🚶"}
+                    </Text>
                     <View style={styles.detailContent}>
                       <Text style={[styles.detailLabel, { color: secondaryText }]}>
-                        移動時間
+                        移動時間（{event.travelMode === "transit" ? "電車" : event.travelMode === "driving" ? "車" : "徒歩"}）
                       </Text>
                       <Text style={[styles.detailValue, { color: textColor }]}>
                         {event.travelTime >= 60

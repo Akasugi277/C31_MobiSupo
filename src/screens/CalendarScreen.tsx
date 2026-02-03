@@ -28,12 +28,22 @@ import EventDetailModal from "../components/EventDetailModal";
 import ShadowView from "../components/ShadowView";
 import { ThemeContext } from "../components/ThemeContext";
 import * as authService from "../services/authService";
+import {
+  CalendarEvent,
+  fetchCalendarEvents,
+} from "../services/calendarService";
 import * as notificationService from "../services/notificationService";
 import * as storageService from "../services/storageService";
 
 // カレンダーアイテム型定義
+type CalendarItem = {
+  id: string;
+  time: string;
+  title: string;
+  source: "local" | "google"; // ローカル予定 or Google Calendar
+};
 type CalendarItems = {
-  [date: string]: Array<{ id: string; time: string; title: string }>;
+  [date: string]: CalendarItem[];
 };
 
 // 日本語ロケール設定
@@ -153,6 +163,9 @@ export default function CalendarScreen() {
   // 予定データの状態管理
   const [events, setEvents] = useState<EventData[]>([]);
 
+  // Google Calendar予定
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+
   // モーダルの表示状態
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -199,10 +212,34 @@ export default function CalendarScreen() {
     }
   };
 
-  // 予定をカレンダー形式に変換
+  // Google Calendar予定を取得
+  const fetchGoogleCalendar = async () => {
+    try {
+      const authenticated = await storageService.isGoogleCalendarAuthenticated();
+      if (!authenticated) return;
+
+      const token = await storageService.getGoogleCalendarToken();
+      if (token) {
+        const events = await fetchCalendarEvents(token, 50);
+        setCalendarEvents(events);
+        console.log(`Google Calendarから${events.length}件の予定を取得しました（カレンダー画面）`);
+      }
+    } catch (error) {
+      console.error("Google Calendar取得エラー（カレンダー画面）:", error);
+      await storageService.clearGoogleCalendarToken();
+    }
+  };
+
+  // 初回マウント時にGoogle Calendar予定も読み込む
+  useEffect(() => {
+    fetchGoogleCalendar();
+  }, []);
+
+  // 予定をカレンダー形式に変換（ローカル + Google Calendar）
   const items = useMemo(() => {
     const itemsMap: CalendarItems = {};
 
+    // ローカル予定を追加
     events.forEach((event) => {
       const dateKey = event.startTime.toISOString().slice(0, 10);
       if (!itemsMap[dateKey]) {
@@ -215,11 +252,29 @@ export default function CalendarScreen() {
           minute: "2-digit",
         }),
         title: event.location ? `${event.title} (${event.location})` : event.title,
+        source: "local",
+      });
+    });
+
+    // Google Calendar予定を追加
+    calendarEvents.forEach((gEvent) => {
+      const dateKey = gEvent.start.toISOString().slice(0, 10);
+      if (!itemsMap[dateKey]) {
+        itemsMap[dateKey] = [];
+      }
+      itemsMap[dateKey].push({
+        id: `google_${gEvent.id}`,
+        time: gEvent.start.toLocaleTimeString("ja-JP", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        title: gEvent.location ? `${gEvent.title} (${gEvent.location})` : gEvent.title,
+        source: "google",
       });
     });
 
     return itemsMap;
-  }, [events]);
+  }, [events, calendarEvents]);
 
   // 予定を保存
   const handleSaveEvent = async (event: EventData) => {
@@ -352,6 +407,7 @@ export default function CalendarScreen() {
             weekDates={weekDates}
             items={items}
             events={events}
+            calendarEvents={calendarEvents}
             selectedDate={selectedDate}
             onSelectDate={(d) => setSelectedDate(d)}
             onEventPress={handleEventPress}
@@ -414,6 +470,7 @@ function WeekView({
   weekDates,
   items,
   events,
+  calendarEvents,
   selectedDate,
   onSelectDate,
   onEventPress,
@@ -423,6 +480,7 @@ function WeekView({
   weekDates: string[];
   items: CalendarItems;
   events: EventData[];
+  calendarEvents: CalendarEvent[];
   selectedDate: string;
   onSelectDate: (d: string) => void;
   onEventPress: (eventId: string) => void;
@@ -432,6 +490,8 @@ function WeekView({
   const nowLineColor = "#FF3B30";
   const eventBgColor = theme === "light" ? "#007AFF20" : "#007AFF40";
   const eventBorderColor = "#007AFF";
+  const googleEventBgColor = theme === "light" ? "#34C75920" : "#34C75940";
+  const googleEventBorderColor = "#34C759";
 
   // 週の範囲文字列を生成
   const weekRangeText = useMemo(() => {
@@ -444,13 +504,21 @@ function WeekView({
     )}週`;
   }, [weekDates]);
 
-  // 選択日のイベントをフィルタ
+  // 選択日のローカルイベントをフィルタ
   const dayEvents = useMemo(() => {
     return events.filter((e) => {
       const dateKey = e.startTime.toISOString().slice(0, 10);
       return dateKey === selectedDate;
     });
   }, [events, selectedDate]);
+
+  // 選択日のGoogle Calendarイベントをフィルタ
+  const dayGoogleEvents = useMemo(() => {
+    return calendarEvents.filter((e) => {
+      const dateKey = e.start.toISOString().slice(0, 10);
+      return dateKey === selectedDate;
+    });
+  }, [calendarEvents, selectedDate]);
 
   // 現在時刻の位置を計算
   const nowPosition = useMemo(() => {
@@ -543,12 +611,24 @@ function WeekView({
                 </Text>
               )}
               {has && (
-                <View
-                  style={[
-                    styles.dot,
-                    { backgroundColor: selected ? "#fff" : "#ff0" },
-                  ]}
-                />
+                <View style={{ flexDirection: "row", marginTop: 4 }}>
+                  {items[d].some((i) => i.source === "local") && (
+                    <View
+                      style={[
+                        styles.dot,
+                        { backgroundColor: selected ? "#fff" : "#ff0" },
+                      ]}
+                    />
+                  )}
+                  {items[d].some((i) => i.source === "google") && (
+                    <View
+                      style={[
+                        styles.dot,
+                        { backgroundColor: selected ? "#fff" : "#34C759", marginLeft: 2 },
+                      ]}
+                    />
+                  )}
+                </View>
               )}
             </TouchableOpacity>
           );
@@ -603,7 +683,7 @@ function WeekView({
           </View>
         )}
 
-        {/* イベントブロック */}
+        {/* ローカルイベントブロック */}
         {dayEvents.map((event) => {
           const startHours =
             event.startTime.getHours() +
@@ -666,6 +746,74 @@ function WeekView({
             </TouchableOpacity>
           );
         })}
+
+        {/* Google Calendarイベントブロック（緑色） */}
+        {dayGoogleEvents.map((gEvent) => {
+          const startHours =
+            gEvent.start.getHours() +
+            gEvent.start.getMinutes() / 60;
+          const endHours =
+            gEvent.end.getHours() +
+            gEvent.end.getMinutes() / 60;
+          const top = (startHours - TIMELINE_START_HOUR) * HOUR_HEIGHT;
+          const height = Math.max(
+            (endHours - startHours) * HOUR_HEIGHT,
+            HOUR_HEIGHT * 0.5,
+          );
+
+          const startStr = gEvent.start.toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const endStr = gEvent.end.toLocaleTimeString("ja-JP", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+          return (
+            <View
+              key={`google_${gEvent.id}`}
+              style={[
+                styles.timelineEvent,
+                {
+                  top,
+                  height,
+                  left: TIME_LABEL_WIDTH + 4,
+                  right: 8,
+                  backgroundColor: googleEventBgColor,
+                  borderLeftColor: googleEventBorderColor,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.timelineEventTitle, { color: textColor }]}
+                numberOfLines={1}
+              >
+                {gEvent.title}
+              </Text>
+              <Text
+                style={[styles.timelineEventTime, { color: textColor + "99" }]}
+                numberOfLines={1}
+              >
+                {startStr}－{endStr}
+              </Text>
+              {gEvent.location && (
+                <Text
+                  style={[styles.timelineEventLocation, { color: textColor + "80" }]}
+                  numberOfLines={1}
+                >
+                  {gEvent.location}
+                </Text>
+              )}
+              <Text
+                style={[styles.googleCalendarBadge]}
+                numberOfLines={1}
+              >
+                Google Calendar
+              </Text>
+            </View>
+          );
+        })}
       </View>
     </>
   );
@@ -679,6 +827,8 @@ type MyMarkedDates = {
     selectedColor?: string;
     marked?: boolean;
     dotColor?: string;
+    hasLocal?: boolean;
+    hasGoogle?: boolean;
   };
 };
 
@@ -702,10 +852,15 @@ function MonthView({
       selectedColor: "#007AFF",
     };
     Object.keys(items).forEach((date) => {
+      const dayItems = items[date];
+      const hasLocal = dayItems.some((i) => i.source === "local");
+      const hasGoogle = dayItems.some((i) => i.source === "google");
       marks[date] = {
         ...(marks[date] || {}),
         marked: true,
-        dotColor: "#FF3B30",
+        dotColor: hasLocal ? "#FF3B30" : "#34C759",
+        hasLocal,
+        hasGoogle,
       };
     });
     return marks;
@@ -822,12 +977,24 @@ function MonthView({
                 {date.day}
               </Text>
               {hasEvents && (
-                <View
-                  style={[
-                    styles.eventDot,
-                    { backgroundColor: isSelected ? "#fff" : "#FF3B30" },
-                  ]}
-                />
+                <View style={styles.eventDotContainer}>
+                  {customMarking?.hasLocal && (
+                    <View
+                      style={[
+                        styles.eventDot,
+                        { backgroundColor: isSelected ? "#fff" : "#FF3B30" },
+                      ]}
+                    />
+                  )}
+                  {customMarking?.hasGoogle && (
+                    <View
+                      style={[
+                        styles.eventDot,
+                        { backgroundColor: isSelected ? "#fff" : "#34C759", marginLeft: customMarking?.hasLocal ? 3 : 0 },
+                      ]}
+                    />
+                  )}
+                </View>
               )}
               {isHoliday && (
                 <Text style={[styles.holidayText, isSelected && { color: "#fff" }]}>
@@ -943,7 +1110,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginTop: 4,
   },
   calendarDay: {
     width: 36,
@@ -955,12 +1121,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "400",
   },
+  eventDotContainer: {
+    flexDirection: "row",
+    position: "absolute",
+    bottom: 4,
+  },
   eventDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    position: "absolute",
-    bottom: 4,
   },
   holidayText: {
     position: "absolute",
@@ -1048,5 +1217,11 @@ const styles = StyleSheet.create({
   timelineEventLocation: {
     fontSize: 11,
     marginTop: 1,
+  },
+  googleCalendarBadge: {
+    fontSize: 9,
+    color: "#34C759",
+    marginTop: 2,
+    fontWeight: "500",
   },
 });

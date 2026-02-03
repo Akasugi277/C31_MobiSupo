@@ -16,6 +16,14 @@ import { WebView } from "react-native-webview";
 import { ThemeContext } from "./ThemeContext";
 import { API_KEYS } from "../config";
 
+interface DelayInfo {
+  lineName: string;
+  lineNameJa: string;
+  status: string;
+  statusText: string;
+  hasDelay: boolean;
+}
+
 interface TransitDetails {
   originStation?: string;
   destinationStation?: string;
@@ -23,6 +31,7 @@ interface TransitDetails {
   transferCount?: number;
   lines?: string[];
   steps?: string[];
+  delayInfo?: DelayInfo[];
 }
 
 interface RouteInfo {
@@ -231,98 +240,61 @@ export default function RouteMapModal({
           </TouchableOpacity>
         </View>
 
-        {/* 電車ルートの詳細情報 or マップ */}
-        {isTransit && route.transitDetails ? (
+        {/* 電車ルート（推定）or マップ */}
+        {isTransit ? (
           <ScrollView style={styles.transitDetailsContainer}>
-            {/* 出発駅・到着駅 */}
-            <View style={styles.stationSection}>
-              <View style={styles.stationInfo}>
-                <Text style={[styles.stationLabel, { color: textColor + "80" }]}>
-                  出発駅
-                </Text>
-                <Text style={[styles.stationName, { color: textColor }]}>
-                  🚉 {route.transitDetails.originStation}
-                </Text>
-              </View>
-              <Text style={[styles.arrow, { color: textColor + "60" }]}>↓</Text>
-              <View style={styles.stationInfo}>
-                <Text style={[styles.stationLabel, { color: textColor + "80" }]}>
-                  到着駅
-                </Text>
-                <Text style={[styles.stationName, { color: textColor }]}>
-                  🚉 {route.transitDetails.destinationStation}
-                </Text>
-              </View>
-            </View>
-
-            {/* ルート概要 */}
-            <View style={styles.detailSection}>
-              <Text style={[styles.sectionTitle, { color: textColor }]}>
-                ℹ️ ルート概要
+            {/* 推定所要時間 */}
+            <View style={styles.estimateSection}>
+              <Text style={styles.estimateIcon}>🚆</Text>
+              <Text style={[styles.estimateTime, { color: textColor }]}>
+                {route.durationText}
               </Text>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: textColor + "80" }]}>
-                  所要時間:
-                </Text>
-                <Text style={[styles.detailValue, { color: textColor }]}>
-                  {route.durationText}
-                </Text>
-              </View>
-              <View style={styles.detailRow}>
-                <Text style={[styles.detailLabel, { color: textColor + "80" }]}>
-                  乗り換え:
-                </Text>
-                <Text style={[styles.detailValue, { color: textColor }]}>
-                  {route.transitDetails.transferCount}回
-                </Text>
-              </View>
-              {route.transitDetails.fare && (
-                <View style={styles.detailRow}>
-                  <Text style={[styles.detailLabel, { color: textColor + "80" }]}>
-                    料金:
-                  </Text>
-                  <Text style={[styles.detailValue, { color: textColor }]}>
-                    ¥{route.transitDetails.fare.toLocaleString()}
-                  </Text>
-                </View>
-              )}
+              <Text style={[styles.estimateNote, { color: textColor + "80" }]}>
+                推定所要時間（車ルートから算出）
+              </Text>
+              <Text style={[styles.estimateDistance, { color: textColor + "60" }]}>
+                距離: {route.distanceText}
+              </Text>
             </View>
 
-            {/* 利用路線 */}
-            {route.transitDetails.lines && route.transitDetails.lines.length > 0 && (
-              <View style={styles.detailSection}>
-                <Text style={[styles.sectionTitle, { color: textColor }]}>
-                  🚃 利用路線
-                </Text>
-                {route.transitDetails.lines.map((line, index) => (
-                  <View key={index} style={styles.lineItem}>
-                    <Text style={[styles.lineBullet, { color: textColor }]}>•</Text>
-                    <Text style={[styles.lineName, { color: textColor }]}>
-                      {line}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
+            {/* Google Mapsで正確なルートを確認 */}
+            <TouchableOpacity
+              style={styles.googleMapsTransitButton}
+              onPress={openInGoogleMaps}
+            >
+              <Text style={styles.googleMapsTransitButtonText}>
+                🗺️ Google Mapsで正確なルートを確認
+              </Text>
+              <Text style={styles.googleMapsTransitButtonSub}>
+                乗り換え・料金・時刻表を確認できます
+              </Text>
+            </TouchableOpacity>
 
-            {/* 経路 */}
-            {route.transitDetails.steps && route.transitDetails.steps.length > 0 && (
-              <View style={styles.detailSection}>
-                <Text style={[styles.sectionTitle, { color: textColor }]}>
-                  📍 経路
+            {/* 注意事項 */}
+            <View style={[styles.infoBox, { backgroundColor: textColor + "08" }]}>
+              <Text style={[styles.infoBoxText, { color: textColor + "80" }]}>
+                ※ 電車の所要時間は推定値です。正確な乗り換え情報・料金はGoogle Mapsアプリでご確認ください。
+              </Text>
+            </View>
+
+            {/* 運行情報（遅延がある場合） */}
+            {route.transitDetails?.delayInfo && route.transitDetails.delayInfo.some(d => d.hasDelay) && (
+              <View style={styles.delaySection}>
+                <Text style={styles.delaySectionTitle}>
+                  ⚠️ 運行情報
                 </Text>
-                {route.transitDetails.steps.map((step, index) => (
-                  <View key={index} style={styles.stepItem}>
-                    <View style={[styles.stepNumber, { backgroundColor: textColor + "20" }]}>
-                      <Text style={[styles.stepNumberText, { color: textColor }]}>
-                        {index + 1}
+                {route.transitDetails.delayInfo
+                  .filter(d => d.hasDelay)
+                  .map((delay, index) => (
+                    <View key={index} style={styles.delayItem}>
+                      <Text style={styles.delayLineName}>
+                        {delay.lineNameJa}
+                      </Text>
+                      <Text style={styles.delayStatus}>
+                        {delay.statusText}
                       </Text>
                     </View>
-                    <Text style={[styles.stepName, { color: textColor }]}>
-                      {step}
-                    </Text>
-                  </View>
-                ))}
+                  ))}
               </View>
             )}
           </ScrollView>
@@ -515,5 +487,78 @@ const styles = StyleSheet.create({
   stepName: {
     fontSize: 14,
     flex: 1,
+  },
+  delaySection: {
+    marginBottom: 24,
+    backgroundColor: "#FFF3F3",
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: "#FF3B30",
+  },
+  delaySectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#FF3B30",
+    marginBottom: 12,
+  },
+  delayItem: {
+    marginBottom: 8,
+  },
+  delayLineName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  delayStatus: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 2,
+  },
+  estimateSection: {
+    alignItems: "center",
+    paddingVertical: 32,
+  },
+  estimateIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  estimateTime: {
+    fontSize: 32,
+    fontWeight: "bold",
+    marginBottom: 8,
+  },
+  estimateNote: {
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  estimateDistance: {
+    fontSize: 13,
+  },
+  googleMapsTransitButton: {
+    backgroundColor: "#007AFF",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  googleMapsTransitButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  googleMapsTransitButtonSub: {
+    color: "#ffffffCC",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  infoBox: {
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  infoBoxText: {
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

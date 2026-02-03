@@ -8,8 +8,8 @@ export const API_KEYS = {
   // Google Maps API Key (地図表示・ルート検索用)
   GOOGLE_MAPS: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "",
 
-  // 駅すぱあと API Key (公共交通機関ルート検索用)
-  EKISPERT: process.env.EXPO_PUBLIC_EKISPERT_API_KEY || "",
+  // ODPT API Key (公共交通オープンデータ - 運行情報取得用)
+  ODPT: process.env.EXPO_PUBLIC_ODPT_API_KEY || "",
 
   // Google Calendar API - OAuth 2.0 Client
   GOOGLE_CALENDAR_CLIENT_ID: process.env.EXPO_PUBLIC_GOOGLE_CALENDAR_CLIENT_ID || "",
@@ -20,5 +20,5 @@ export const API_KEYS = {
 export const API_ENDPOINTS = {
   OPENWEATHER_BASE: "https://api.openweathermap.org/data/2.5",
   GOOGLE_MAPS_DIRECTIONS: "https://maps.googleapis.com/maps/api/directions/json",
-  EKISPERT_BASE: "https://api.ekispert.jp/v1/json",
+  ODPT_BASE: "https://api.odpt.org/api/v4",
 };
